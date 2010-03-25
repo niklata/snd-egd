@@ -44,6 +44,7 @@ ring_buffer_t *rb;
 static char *cdevice = DEFAULT_HW_DEVICE;
 static const char *cdev_id = DEFAULT_HW_ITEM;
 static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
+static unsigned char max_bit = DEFAULT_MAX_BIT;
 static int snd_format = -1;
 
 static unsigned int sample_size = DEFAULT_SAMPLE_RATE;
@@ -96,6 +97,7 @@ int main(int argc, char **argv)
     struct option long_options[] = {
             {"device",  1, NULL, 'd' },
             {"port", 1, NULL, 'i' },
+            {"max-bit", 1, NULL, 'b' },
             {"do-not-fork", 1, NULL, 'n' },
             {"sample-rate", 1, NULL, 'r' },
             {"skip-samples", 1, NULL, 's' },
@@ -107,7 +109,9 @@ int main(int argc, char **argv)
 
     /* Process commandline options */
     while (1) {
-        c = getopt_long (argc, argv, "i:d:nr:s:p:vh", long_options, NULL);
+        int t;
+
+        c = getopt_long (argc, argv, "i:d:b:nr:s:p:vh", long_options, NULL);
         if (c == -1)
             break;
 
@@ -124,16 +128,26 @@ int main(int argc, char **argv)
                 gflags_detach = 0;
                 break;
 
+            case 'b':
+                t = atoi(optarg);
+                if (t > 0 && t <= 16)
+                    max_bit = t;
+                else
+                    max_bit = DEFAULT_MAX_BIT;
+                break;
+
             case 'r':
-                if (atoi(optarg) > 0)
-                    sample_rate = atoi(optarg);
+                t = atoi(optarg);
+                if (t > 0)
+                    sample_rate = t;
                 else
                     sample_rate = DEFAULT_SAMPLE_RATE;
                 break;
 
             case 's':
-                if (atoi(optarg) > 0)
-                    skip_samples = atoi(optarg);
+                t = atoi(optarg);
+                if (t > 0)
+                    skip_samples = t;
                 else
                     skip_samples = DEFAULT_SKIP_SAMPLES;
                 break;
@@ -360,65 +374,121 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
 }
 
 /*
- * We assume that the chance of the LSB being a 0 or 1 is not
- * equal.  It is thus a statistically unfair 'coin'.  We can
- * nevertheless use this sample as if it were a fair 'coin' if
- * we use a special procedure:
+ * We assume that the chance of a given bit in a sample being a 0 or 1 is not
+ * equal.  It is thus a statistically unfair 'coin'.  We can nevertheless use
+ * this sample as if it were a fair 'coin' if we use a special procedure:
  *
- * 1. Take a pair of LSBs
+ * 1. Take a pair of bits of fixed significance in the output
  * 2. If 01, treat as a zero bit.
  * 3. If 10, treat as a one bit.
  * 4. Otherwise, discard as no result.
  */
 static int process_input(char *buf, char *bufend)
 {
-    size_t i;
+    size_t i, j;
     int total_out = 0, bits_out = 0;
-    int new = -1, prev = -1;
+    int new = -1, prev_u[8], prev_l[8], u_src_byte, l_src_byte;
+    int max_u, max_l;
     unsigned char byte_out = 0;
 
     if (!buf || !bufend)
         suicide("process_input received a NULL arg");
 
+    for (j = 0; j < 8; ++j) {
+        prev_l[j] = -1;
+        prev_u[j] = -1;
+    }
+
+    max_l = MIN(max_bit, 8);
+    max_u = MAX((max_bit - 8), 0);
+    max_u = MIN(max_u, 8);
+
+    /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufend - buf) / 2; ++i) {
 
-        /* Select the LSB, taking endianness into account. */
-        if (snd_format == SND_PCM_FORMAT_S16_BE)
-            new = buf[i*2+1] & 1;
-        else
-            new = buf[i*2] & 1;
-
-        /* We've not yet collected two LSBs; get another if possible. */
-        if (prev == -1) {
-            prev = new;
-            continue;
+        if (snd_format == SND_PCM_FORMAT_S16_BE) {
+            l_src_byte = buf[i*2+1];
+            u_src_byte = buf[i*2];
+        } else {
+            l_src_byte = buf[i*2];
+            u_src_byte = buf[i*2+1];
         }
 
-        /* If the LSBs are equal, discard both. */
-        if (prev == new) {
-            prev = -1;
-            continue;
+        /* Process lower bits */
+        for (j = 0; j < max_l; ++j) {
+            /* Select the bit of given significance. */
+            new = (l_src_byte >> j) & 1;
+
+            /* We've not yet collected two bits; move on. */
+            if (prev_l[j] == -1) {
+                prev_l[j] = new;
+                continue;
+            }
+
+            /* If the bits are equal, discard both. */
+            if (prev_l[j] == new) {
+                prev_l[j] = -1;
+                continue;
+            }
+
+            /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
+             * is already marked as 0. */
+            if (prev_l[j])
+                byte_out |= 1 << bits_out;
+            bits_out++;
+            prev_l[j] = -1;
+
+            /* See if we've collected an entire byte.  If so, then copy
+             * it into the output buffer. */
+            if (bits_out == 8) {
+                total_out += rb_store_byte(rb, byte_out);
+
+                bits_out = 0;
+                byte_out = 0;
+
+                if (rb_is_full(rb))
+                    goto done;
+            }
         }
 
-        /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
-         * is already marked as 0. */
-        if (prev)
-            byte_out |= 1 << bits_out;
-        bits_out++;
-        prev = -1;
+        /* Process upper bits if necessary. */
+        for (j = 0; j < max_u; ++j) {
+            /* Select the bit of given significance. */
+            new = (u_src_byte >> j) & 1;
 
-        /* See if we've collected an entire byte.  If so, then copy
-         * it into the output buffer. */
-        if (bits_out == 8) {
-            total_out += rb_store_byte(rb, byte_out);
+            /* We've not yet collected two bits; move on. */
+            if (prev_u[j] == -1) {
+                prev_u[j] = new;
+                continue;
+            }
 
-            bits_out = 0;
-            byte_out = 0;
+            /* If the bits are equal, discard both. */
+            if (prev_u[j] == new) {
+                prev_u[j] = -1;
+                continue;
+            }
 
-            if (rb_is_full(rb))
-                break;
+            /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
+             * is already marked as 0. */
+            if (prev_u[j])
+                byte_out |= 1 << bits_out;
+            bits_out++;
+            prev_u[j] = -1;
+
+            /* See if we've collected an entire byte.  If so, then copy
+             * it into the output buffer. */
+            if (bits_out == 8) {
+                total_out += rb_store_byte(rb, byte_out);
+
+                bits_out = 0;
+                byte_out = 0;
+
+                if (rb_is_full(rb))
+                    goto done;
+            }
         }
     }
+ done:
     return total_out;
 }
 
@@ -497,6 +567,7 @@ static void usage(void)
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "--device,       -d []  Specify sound device to use. (Default %s)\n", DEFAULT_HW_DEVICE);
     fprintf(stderr, "--item,         -i []  Specify item on the device that we sample from. (Default %s)\n", DEFAULT_HW_ITEM);
+    fprintf(stderr, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)\n", DEFAULT_MAX_BIT);
     fprintf(stderr, "--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
     fprintf(stderr, "--skip-samples, -s []  Ignore the first N audio samples. (default %i)\n", DEFAULT_SKIP_SAMPLES);
     fprintf(stderr, "--pid-file,     -p []  Path where the PID file will be created. (default %s)\n", DEFAULT_PID_FILE);
