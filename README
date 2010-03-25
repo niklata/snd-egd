@@ -1,0 +1,35 @@
+This is just a modification of the base program to deal with an audio card
+that is not connected to any actual audio source.  All entropy is gathered
+from the least significant bit of the audio data alone.  von Neumann's method
+for ensuring fairness of an unfair coin is applied to make certain that the
+resulting data is indeed random.
+
+Using this method should be fine assuming that the change in probability
+of a 1 or 0 bit is continuous with respect to time.  Since temperature
+is probably the largest influence in real world situations, this assumption
+should be fine.
+
+Speed of random number generation is dependent on having well-distributed input
+LSBs.  This will be mostly dependent on having proper mixer settings.
+
+This approach will sacrifice a lot of speed compared to direct sampling of
+soundcard data, but should ensure a higher degree of quasi-randomness.
+
+For higher performance, the amount of data sampled from the sound card
+varies dynamically to keep a static ring buffer of entropy filled with
+minimum waste.
+
+Entropy quality is no longer checked, since chosen method will certainly
+produce real entropy at the sacrifice of throughput.
+
+- Nicholas Kain ( njk aaaaaaat kain dot us )
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The idea for this program was originally by Damien Miller <djm@mindrot.org>.
+Since then, a few changes have made.
+Especially the algorithm was redone.
+Sample-freq was set low, volume to very low to record especially the noise, data is then biased and entropy is calculated.
+Also added code that verifies the random data before submitting it to the kernel.
+
+--- folkert@vanheusden.com
+
