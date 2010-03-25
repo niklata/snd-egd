@@ -47,7 +47,7 @@ static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 static int snd_format = -1;
 
-static unsigned int sample_size = DEFAULT_SAMPLE_RATE;
+static unsigned int sample_size = MAX_SAMPLE_SIZE;
 static unsigned int skip_samples = 0;
 
 static unsigned int predict_sample(void);
@@ -86,8 +86,8 @@ static unsigned int predict_sample(void) {
         sample_size /= 2;
     }
 
-    sample_size = MIN(DEFAULT_SAMPLE_RATE, sample_size);
-    sample_size = MAX(DEFAULT_SAMPLE_RATE / 16, sample_size);
+    sample_size = MIN(MAX_SAMPLE_SIZE, sample_size);
+    sample_size = MAX(MAX_SAMPLE_SIZE / 16, sample_size);
     return sample_size;
 }
 

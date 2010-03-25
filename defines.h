@@ -13,6 +13,7 @@
 #define DEFAULT_HW_DEVICE           "hw:0"
 #define DEFAULT_HW_ITEM             "capture"
 #define DEFAULT_SAMPLE_RATE         48000
+#define MAX_SAMPLE_SIZE             12000
 #define DEFAULT_SKIP_SAMPLES        0
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
