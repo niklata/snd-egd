@@ -232,6 +232,21 @@ static int alsa_setparams(snd_pcm_t *chandle)
     return 0;
 }
 
+static void wait_for_watermark(int random_fd)
+{
+    fd_set write_fd;
+    FD_ZERO(&write_fd);
+    FD_SET(random_fd, &write_fd);
+
+    for (;;) {
+        /* Wait for krng to fall below entropy watermark */
+        if (select(random_fd + 1, NULL, &write_fd, NULL, NULL) >= 0)
+            break;
+        if (errno != EINTR)
+            suicide("Select error: %m");
+    }
+}
+
 static void main_loop(const char *cdevice)
 {
     int random_fd = -1, max_bits;
@@ -262,17 +277,8 @@ static void main_loop(const char *cdevice)
     for(;;) {
         int i, total_added = 0, before, after;
         int wanted_bits;
-        fd_set write_fd;
-        FD_ZERO(&write_fd);
-        FD_SET(random_fd, &write_fd);
 
-        for (;;) {
-            /* Wait for krng to fall below entropy watermark */
-            if (select(random_fd + 1, NULL, &write_fd, NULL, NULL) >= 0)
-                break;
-            if (errno != EINTR)
-                suicide("Select error: %m");
-        }
+        wait_for_watermark(random_fd);
 
         /* Find out how many bits to add */
         if (ioctl(random_fd, RNDGETENTCNT, &before) == -1)
