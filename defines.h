@@ -4,8 +4,6 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
 
-#define HOST_ENDIAN_LE 1
-
 #define MAX_PATH_LENGTH 1024
 #define MAX_BUF 1024
 #define MAXLINE 1024
@@ -17,7 +15,7 @@
 #define DEFAULT_HW_DEVICE           "hw:0"
 #define DEFAULT_HW_ITEM             "capture"
 #define DEFAULT_SAMPLE_RATE         48000
-#define DEFAULT_SKIP_BYTES          0
+#define DEFAULT_SKIP_BYTES          (4096 * 16)
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
 #define RB_SIZE                     4096

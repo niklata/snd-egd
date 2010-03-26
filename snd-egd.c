@@ -41,8 +41,6 @@ ring_buffer_t *rb;
 
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 
-static unsigned int skip_bytes = 0;
-
 static void main_loop(void);
 static void usage(void);
 static int vn_renorm_buf(char *buf8, size_t buf8size);
@@ -101,10 +99,7 @@ int main(int argc, char **argv)
 
             case 's':
                 t = atoi(optarg);
-                if (t > 0)
-                    skip_bytes = t;
-                else
-                    skip_bytes = DEFAULT_SKIP_BYTES;
+                sound_set_skip_bytes(t);
                 break;
 
             case 'p':
@@ -200,6 +195,8 @@ static void main_loop()
     /* Find out the kernel entropy pool size */
     max_bits = random_max_bits(random_fd);
 
+    sound_open();
+
     /* Prefill entropy buffer */
     get_random_data(rb->size - rb->bytes);
 
@@ -224,6 +221,7 @@ static void main_loop()
 
         get_random_data(rb->size - rb->bytes);
     }
+    sound_close();
 }
 
 /*
@@ -356,13 +354,13 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
 
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufsize / 2); ++i) {
-#ifdef HOST_ENDIAN_LE
-        if (sound_is_be()) {
+#ifdef HOST_ENDIAN_BE
+        if (sound_is_le()) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
 #else
-        if (sound_is_le()) {
+        if (sound_is_be()) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
@@ -378,27 +376,21 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
 /* target = desired bytes of entropy that should be retrieved */
 static void get_random_data(int target)
 {
-    int total_in = 0, total_out = 0, i;
+    int total_in = 0, total_out = 0;
     char buf[PAGE_SIZE];
 
     log_line(LOG_DEBUG, "get_random_data(%d)", target);
 
-    sound_open();
-
     target = MIN(sizeof buf, target);
 
-    /* Discard the initial data; it may be a click or something else odd. */
-    for (i = skip_bytes; i > 0; i -= (sizeof buf))
-        sound_read(buf, sizeof buf);
-
+    sound_start();
     while (total_out < target) {
         sound_read(buf, sizeof buf);
         total_in += sizeof buf;
         total_out += vn_renorm_buf(buf, sizeof buf);
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }
-
-    sound_close();
+    sound_stop();
 
     log_line(LOG_DEBUG, "get_random_data(): in->out bytes = %d->%d, eff = %f",
             total_in, total_out, (float)total_out / (float)total_in);

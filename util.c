@@ -10,6 +10,7 @@
 #include "log.h"
 #include "rb.h"
 #include "util.h"
+#include "sound.h"
 
 char *pidfile_path = DEFAULT_PID_FILE;
 extern ring_buffer_t *rb;
@@ -38,6 +39,7 @@ void gracefully_exit(int signum)
         suicide("problem unlocking pages");
     unlink(pidfile_path);
     rb_delete(rb);
+    sound_close();
     log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
     exit(0);
 }

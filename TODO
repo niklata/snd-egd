@@ -1,5 +1,5 @@
 - Support poll()
 - Support /dev/dsp
+- Switch to using AMLS method of von Neumann's procedure
 - Manual page
-- Sample sources other than soundcard?
 

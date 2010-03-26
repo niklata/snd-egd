@@ -19,6 +19,8 @@
 #ifndef __NJK_LOG_H_
 #define __NJK_LOG_H_ 1
 
+#include <syslog.h>
+
 extern char gflags_detach;
 extern char gflags_debug;
 

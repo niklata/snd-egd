@@ -18,10 +18,11 @@
 
 #include <stdio.h>
 #include <strings.h>
-#include <syslog.h>
 #include <stdarg.h>
 #include <stdlib.h>
+
 #include "defines.h"
+#include "log.h"
 
 /* global logging flags */
 char gflags_detach = 1;
