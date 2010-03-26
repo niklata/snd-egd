@@ -1,3 +1,5 @@
+- Support poll()
+- Support /dev/dsp
 - Manual page
 - Sample sources other than soundcard?
 

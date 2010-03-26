@@ -406,12 +406,11 @@ static int process_input(char *buf, char *bufend)
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufend - buf) / 2; ++i) {
 
+        l_src_byte = buf[i*2];
+        u_src_byte = buf[i*2+1];
         if (snd_format == SND_PCM_FORMAT_S16_BE) {
             l_src_byte = buf[i*2+1];
             u_src_byte = buf[i*2];
-        } else {
-            l_src_byte = buf[i*2];
-            u_src_byte = buf[i*2+1];
         }
 
         /* Process lower bits */
