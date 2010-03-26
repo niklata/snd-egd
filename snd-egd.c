@@ -47,7 +47,7 @@ static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 static int snd_format = -1;
 
-static unsigned int skip_samples = 0;
+static unsigned int skip_bytes = 0;
 
 static void main_loop(const char *cdevice);
 static int alsa_setparams(snd_pcm_t *chandle);
@@ -65,7 +65,7 @@ int main(int argc, char **argv)
             {"max-bit", 1, NULL, 'b' },
             {"do-not-fork", 1, NULL, 'n' },
             {"sample-rate", 1, NULL, 'r' },
-            {"skip-samples", 1, NULL, 's' },
+            {"skip-bytes", 1, NULL, 's' },
             {"pid-file", 1, NULL, 'p' },
             {"verbose", 0, NULL, 'v' },
             {"help",    0, NULL, 'h' },
@@ -112,9 +112,9 @@ int main(int argc, char **argv)
             case 's':
                 t = atoi(optarg);
                 if (t > 0)
-                    skip_samples = t;
+                    skip_bytes = t;
                 else
-                    skip_samples = DEFAULT_SKIP_SAMPLES;
+                    skip_bytes = DEFAULT_SKIP_BYTES;
                 break;
 
             case 'p':
@@ -434,7 +434,7 @@ static void get_random_data(int target)
     bytes_per_frame = snd_pcm_frames_to_bytes(chandle, 1);
     target = MIN(sizeof buf, target);
 
-    for (i = skip_samples; i > 0; --i) {
+    for (i = skip_bytes; i > 0; --i) {
         /* Discard the first data read it often contains weird looking
          * data - probably a click from driver loading or card initialization.
          */
@@ -480,7 +480,7 @@ static void usage(void)
     fprintf(stderr, "--item,         -i []  Specify item on the device that we sample from. (Default %s)\n", DEFAULT_HW_ITEM);
     fprintf(stderr, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)\n", DEFAULT_MAX_BIT);
     fprintf(stderr, "--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
-    fprintf(stderr, "--skip-samples, -s []  Ignore the first N audio samples. (default %i)\n", DEFAULT_SKIP_SAMPLES);
+    fprintf(stderr, "--skip-bytes, -s []  Ignore the first N audio bytes after opening device. (default %i)\n", DEFAULT_SKIP_BYTES);
     fprintf(stderr, "--pid-file,     -p []  Path where the PID file will be created. (default %s)\n", DEFAULT_PID_FILE);
     fprintf(stderr, "--do-not-fork   -n     Do not fork.\n");
     fprintf(stderr, "--verbose,      -v     Be verbose.\n");
