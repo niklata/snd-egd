@@ -338,11 +338,12 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
 }
 
 typedef struct {
-    int prev_bits[16], bits_out, topbit, total_out;
+    int bits_out, topbit, total_out;
+    char prev_bits[16];
     unsigned char byte_out;
-} vn_renorm_int16_state_t;
+} vn_renorm_state_t;
 
-static void vn_renorm_int16_init(vn_renorm_int16_state_t *state, int topbit)
+static void vn_renorm_init(vn_renorm_state_t *state, int topbit)
 {
     int j;
 
@@ -356,7 +357,7 @@ static void vn_renorm_int16_init(vn_renorm_int16_state_t *state, int topbit)
         state->prev_bits[j] = -1;
 }
 
-static int vn_renorm_int16(vn_renorm_int16_state_t *state, int16_t i)
+static int vn_renorm(vn_renorm_state_t *state, int i)
 {
     int j, new = -1;
 
@@ -416,14 +417,14 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
     int16_t *buf = (int16_t *)buf8;
     size_t i, bufsize = buf8size / 2;
     int topbit;
-    vn_renorm_int16_state_t state_L, state_R;
+    vn_renorm_state_t state_L, state_R;
 
     if (!buf || !bufsize)
         suicide("vn_renorm_buf received a NULL arg");
 
     topbit = MIN(max_bit, 16);
-    vn_renorm_int16_init(&state_L, topbit);
-    vn_renorm_int16_init(&state_R, topbit);
+    vn_renorm_init(&state_L, topbit);
+    vn_renorm_init(&state_R, topbit);
 
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufsize / 2); ++i) {
@@ -438,9 +439,9 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
             endian_swap16(buf + 2*i + 1);
         }
 #endif
-        if (vn_renorm_int16(&state_L, buf[2*i]))
+        if (vn_renorm(&state_L, buf[2*i]))
             break;
-        if (vn_renorm_int16(&state_R, buf[2*i+1]))
+        if (vn_renorm(&state_R, buf[2*i+1]))
             break;
     }
     return state_L.total_out + state_R.total_out;
