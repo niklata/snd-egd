@@ -47,49 +47,14 @@ static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 static int snd_format = -1;
 
-static unsigned int sample_size = MAX_SAMPLE_SIZE;
 static unsigned int skip_samples = 0;
 
-static unsigned int predict_sample(void);
 static void main_loop(const char *cdevice);
 static int alsa_setparams(snd_pcm_t *chandle);
 static void usage(void);
-static int process_input(char *buf, char *bufend);
+static int vn_renorm_buf(char *buf8, size_t buf8size);
 static void get_random_data(int process_samples);
 static unsigned int ioc_rndaddentropy(int handle, int wanted_bits);
-
-/* scale our sampling rate according to demand */
-static unsigned int predict_sample(void) {
-    unsigned int bits_stored = rb_num_bytes(rb) * 8;
-
-    if (bits_stored < (rb->size * 1))
-        sample_size *= 2;
-    else if (bits_stored < (rb->size * 2)) {
-        sample_size *= 4;
-        sample_size /= 3;
-    } else if (bits_stored < (rb->size * 3)) {
-        sample_size *= 8;
-        sample_size /= 7;
-    } else if (bits_stored < (rb->size * 4)) {
-        sample_size *= 16;
-        sample_size /= 15;
-    } else if (bits_stored > (rb->size * 4)) {
-        sample_size *= 15;
-        sample_size /= 16;
-    } else if (bits_stored < (rb->size * 5)) {
-        sample_size *= 7;
-        sample_size /= 8;
-    } else if (bits_stored > (rb->size * 6)) {
-        sample_size *= 3;
-        sample_size /= 4;
-    } else if (bits_stored > (rb->size * 7)) {
-        sample_size /= 2;
-    }
-
-    sample_size = MIN(MAX_SAMPLE_SIZE, sample_size);
-    sample_size = MAX(MAX_SAMPLE_SIZE / 16, sample_size);
-    return sample_size;
-}
 
 int main(int argc, char **argv)
 {
@@ -222,10 +187,18 @@ static int alsa_setparams(snd_pcm_t *chandle)
                    sample_rate, cdev_id, snd_strerror(err));
 
     /* Set sample format */
+#ifdef HOST_ENDIAN_LE
     snd_format = SND_PCM_FORMAT_S16_LE;
+#else
+    snd_format = SND_PCM_FORMAT_S16_BE;
+#endif
     err = snd_pcm_hw_params_set_format(chandle, ct_params, snd_format);
     if (err < 0) {
+#ifdef HOST_ENDIAN_LE
         snd_format = SND_PCM_FORMAT_S16_BE;
+#else
+        snd_format = SND_PCM_FORMAT_S16_LE;
+#endif
         err = snd_pcm_hw_params_set_format(chandle, ct_params, snd_format);
     }
     if (err < 0)
@@ -261,10 +234,33 @@ static void wait_for_watermark(int random_fd)
     }
 }
 
+static int random_max_bits(int random_fd)
+{
+    int ret;
+    FILE *poolsize_fh;
+
+    poolsize_fh = fopen(DEFAULT_POOLSIZE_FN, "rb");
+    if (!poolsize_fh)
+        suicide("Couldn't open poolsize file: %m");
+    if (fscanf(poolsize_fh, "%d", &ret) != 1)
+        suicide("Failed to read from poolsize file!");
+    fclose(poolsize_fh);
+    return ret;
+}
+
+static int random_cur_bits(int random_fd)
+{
+    int ret;
+
+    if (ioctl(random_fd, RNDGETENTCNT, &ret) == -1)
+        suicide("Couldn't query entropy-level from kernel");
+    return ret;
+}
+
 static void main_loop(const char *cdevice)
 {
     int random_fd = -1, max_bits;
-    FILE *poolsize_fh;
+    int i, before, wanted_bits;
 
     rb = rb_new(RB_SIZE);
 
@@ -274,32 +270,20 @@ static void main_loop(const char *cdevice)
         suicide("Couldn't open random device: %m");
 
     /* Find out the kernel entropy pool size */
-    poolsize_fh = fopen(DEFAULT_POOLSIZE_FN, "rb");
-    if (!poolsize_fh)
-        suicide("Couldn't open poolsize file: %m");
-    if (fscanf(poolsize_fh, "%d", &max_bits) != 1)
-        suicide("Failed to read from poolsize file!");
-    fclose(poolsize_fh);
+    max_bits = random_max_bits(random_fd);
 
-    /*
-     * First, get some data so that we can immediately submit something when
-     * the kernel entropy-buffer gets below the limit.
-     */
-    get_random_data(sample_size);
+    /* Prefill entropy buffer */
+    get_random_data(rb->size - rb->bytes);
 
-    /* Main read loop */
     for(;;) {
-        int i, total_added = 0, before, after;
-        int wanted_bits;
-
         wait_for_watermark(random_fd);
+        log_line(LOG_DEBUG, "woke up due to low entropy state");
 
         /* Find out how many bits to add */
-        if (ioctl(random_fd, RNDGETENTCNT, &before) == -1)
-            suicide("Couldn't query entropy-level from kernel");
-
-        log_line(LOG_DEBUG, "woke up due to low entropy state (%d bits left)",
-                 before);
+        before = random_cur_bits(random_fd);
+        wanted_bits = max_bits - before;
+        log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
+                 max_bits, wanted_bits);
 
         /*
          * Loop until the buffer is full: we do not check the number of
@@ -307,30 +291,10 @@ static void main_loop(const char *cdevice)
          * might cause snd-egd to run constantly if there are
          * a lot of bytes being consumed from the random device.
          */
-        wanted_bits = max_bits - before;
-        log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
-                 max_bits, wanted_bits);
-        for (i = 0; i < wanted_bits;) {
-            unsigned int ba = 0;
+        for (i = 0; i < wanted_bits;)
+            i += ioc_rndaddentropy(random_fd, wanted_bits - i);
 
-            ba = ioc_rndaddentropy(random_fd, wanted_bits - i);
-
-            total_added += ba;
-            i += ba;
-
-            /* Get number of bits in KRNG after credit */
-            if (ioctl(random_fd, RNDGETENTCNT, &after) == -1)
-                suicide("Coundn't query entropy-level from kernel: %m");
-
-            if (after < max_bits)
-                log_line(LOG_DEBUG, "minimum level not reached: %d < %d",
-                         after, max_bits);
-        }
-
-        get_random_data(predict_sample());
-
-        log_line(LOG_INFO, "Entropy credit of %i bits made (%i bits before, %i bits after)",
-                 total_added, before, after);
+        get_random_data(rb->size - rb->bytes);
     }
 }
 
@@ -367,8 +331,8 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
 
     free(output);
 
-    log_line(LOG_DEBUG, "%d were requested, %d bits of data were stored, %d bits usable were added",
-             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8);
+    log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
+             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(rb) * 8);
 
     return wanted_bytes * 8;
 }
@@ -382,97 +346,56 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
  * 2. If 01, treat as a zero bit.
  * 3. If 10, treat as a one bit.
  * 4. Otherwise, discard as no result.
+ *
+ * @return number of bytes that were added to the entropy buffer
  */
-static int process_input(char *buf, char *bufend)
+static int vn_renorm_buf(char *buf8, size_t buf8size)
 {
-    size_t i, j;
-    int total_out = 0, bits_out = 0;
-    int new = -1, prev_u[8], prev_l[8], u_src_byte, l_src_byte;
-    int max_u, max_l;
+    int16_t *buf = (int16_t *)buf8;
+    size_t i, j, bufsize = buf8size / 2;
+    int total_out = 0, bits_out = 0, topbit, new = -1, prev[16];
     unsigned char byte_out = 0;
 
-    if (!buf || !bufend)
-        suicide("process_input received a NULL arg");
+    if (!buf || !bufsize)
+        suicide("vn_renorm_buf received a NULL arg");
 
-    for (j = 0; j < 8; ++j) {
-        prev_l[j] = -1;
-        prev_u[j] = -1;
-    }
-
-    max_l = MIN(max_bit, 8);
-    max_u = MAX((max_bit - 8), 0);
-    max_u = MIN(max_u, 8);
+    for (j = 0; j < 16; ++j)
+        prev[j] = -1;
+    topbit = MIN(max_bit, 16);
 
     /* Step through each 16-bit sample in the buffer one at a time. */
-    for (i = 0; i < (bufend - buf) / 2; ++i) {
+    for (i = 0; i < bufsize; ++i) {
+#ifdef HOST_ENDIAN_LE
+        if (snd_format == SND_PCM_FORMAT_S16_BE)
+            endian_swap16(buf + i);
+#else
+        if (snd_format == SND_PCM_FORMAT_S16_LE)
+            endian_swap16(buf + i);
+#endif
 
-        l_src_byte = buf[i*2];
-        u_src_byte = buf[i*2+1];
-        if (snd_format == SND_PCM_FORMAT_S16_BE) {
-            l_src_byte = buf[i*2+1];
-            u_src_byte = buf[i*2];
-        }
-
-        /* Process lower bits */
-        for (j = 0; j < max_l; ++j) {
+        /* process bits */
+        for (j = 0; j < topbit; ++j) {
             /* Select the bit of given significance. */
-            new = (l_src_byte >> j) & 1;
+            new = (buf[i] >> j) & 1;
 
             /* We've not yet collected two bits; move on. */
-            if (prev_l[j] == -1) {
-                prev_l[j] = new;
+            if (prev[j] == -1) {
+                prev[j] = new;
                 continue;
             }
 
             /* If the bits are equal, discard both. */
-            if (prev_l[j] == new) {
-                prev_l[j] = -1;
+            if (prev[j] == new) {
+                prev[j] = -1;
                 continue;
             }
 
             /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
              * is already marked as 0. */
-            if (prev_l[j])
+            if (prev[j])
                 byte_out |= 1 << bits_out;
             bits_out++;
-            prev_l[j] = -1;
-
-            /* See if we've collected an entire byte.  If so, then copy
-             * it into the output buffer. */
-            if (bits_out == 8) {
-                total_out += rb_store_byte_xor(rb, byte_out);
-
-                bits_out = 0;
-                byte_out = 0;
-
-                if (rb_is_full(rb))
-                    goto done;
-            }
-        }
-
-        /* Process upper bits if necessary. */
-        for (j = 0; j < max_u; ++j) {
-            /* Select the bit of given significance. */
-            new = (u_src_byte >> j) & 1;
-
-            /* We've not yet collected two bits; move on. */
-            if (prev_u[j] == -1) {
-                prev_u[j] = new;
-                continue;
-            }
-
-            /* If the bits are equal, discard both. */
-            if (prev_u[j] == new) {
-                prev_u[j] = -1;
-                continue;
-            }
-
-            /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
-             * is already marked as 0. */
-            if (prev_u[j])
-                byte_out |= 1 << bits_out;
-            bits_out++;
-            prev_u[j] = -1;
+            prev[j] = -1;
 
             /* See if we've collected an entire byte.  If so, then copy
              * it into the output buffer. */
@@ -491,10 +414,12 @@ static int process_input(char *buf, char *bufend)
     return total_out;
 }
 
-static void get_random_data(int process_samples)
+/* target = desired bytes of entropy that should be retrieved */
+static void get_random_data(int target)
 {
-    int n_to_do, total_in = 0, total_out = 0, bufsize, err;
-    char *buf, *bufp;
+    int total_in = 0, total_out = 0, err, i;
+    size_t bytes_per_frame;
+    char buf[PAGE_SIZE];
     snd_pcm_t *chandle;
     snd_pcm_sframes_t garbage_frames;
 
@@ -504,58 +429,45 @@ static void get_random_data(int process_samples)
     /* Open and set up ALSA device for reading */
     alsa_setparams(chandle);
 
-    log_line(LOG_DEBUG, "get_random_data(%d)", process_samples);
+    log_line(LOG_DEBUG, "get_random_data(%d)", target);
 
-    bufsize = snd_pcm_frames_to_bytes(chandle,
-                                      MAX(skip_samples, process_samples));
-    buf = xmalloc(bufsize);
-    log_line(LOG_DEBUG, "Input buffer size: %d bytes", bufsize);
+    bytes_per_frame = snd_pcm_frames_to_bytes(chandle, 1);
+    target = MIN(sizeof buf, target);
 
-    if (skip_samples) {
+    for (i = skip_samples; i > 0; --i) {
         /* Discard the first data read it often contains weird looking
          * data - probably a click from driver loading or card initialization.
          */
-        garbage_frames = snd_pcm_readi(chandle, buf, skip_samples);
+        garbage_frames = snd_pcm_readi(chandle, buf,
+                                       (sizeof buf) / bytes_per_frame);
 
         /* Make sure we aren't hitting a disconnect/suspend case */
         if (garbage_frames < 0)
             snd_pcm_recover(chandle, garbage_frames, 0);
         /* Nope, something else is wrong. Bail. */
         if (garbage_frames < 0)
-            suicide("Get random data: read error: %m");
+            suicide("get_random_data(): read error: %m");
     }
 
-    /* Read a buffer of audio */
-    n_to_do = process_samples;
-    bufp = buf;
-    while (n_to_do > 0) {
-        snd_pcm_sframes_t frames_read = snd_pcm_readi(chandle, bufp, n_to_do);
+    while (total_out < target) {
+        snd_pcm_sframes_t frames_read;
+        frames_read = snd_pcm_readi(chandle, buf,
+                                    (sizeof buf) / bytes_per_frame);
         /* Make sure we aren't hitting a disconnect/suspend case */
         if (frames_read < 0)
             frames_read = snd_pcm_recover(chandle, frames_read, 0);
         /* Nope, something else is wrong. Bail. */
-        if (frames_read < 0)
-            suicide("Read error: %m");
-        if (frames_read == -1) {
-            if (errno != EINTR)
-                suicide("Read error: %m");
-        }
-        else {
-            n_to_do -= frames_read;
-            bufp += frames_read;
-        }
+        if (frames_read < 0 || (frames_read == -1 && errno != EINTR))
+            suicide("get_random_data(): Read error: %m");
+        total_in += sizeof buf;
+        total_out += vn_renorm_buf(buf, sizeof buf);
+        log_line(LOG_DEBUG, "total_out = %d", total_out);
     }
 
     snd_pcm_close(chandle);
 
-    total_in = snd_pcm_frames_to_bytes(chandle, (bufp - buf));
-    total_out = process_input(buf, bufp);
-
-    log_line(LOG_DEBUG, "Input bytes: %d ; output bytes: %d", total_in,
-             total_out);
-    log_line(LOG_DEBUG, "get_random_data() finished");
-
-    free(buf);
+    log_line(LOG_DEBUG, "get_random_data(): in->out bytes = %d->%d, eff = %f",
+            total_in, total_out, (float)total_out / (float)total_in);
 }
 
 static void usage(void)

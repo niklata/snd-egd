@@ -16,8 +16,8 @@
 
 typedef struct {
     char *buf;
-    unsigned int size;
-    unsigned int bytes;
+    unsigned int size; /* max size of the buffer in bytes */
+    unsigned int bytes; /* current size of the buffer in bytes */
     unsigned int index;
     unsigned int fill_idx;
 } ring_buffer_t;

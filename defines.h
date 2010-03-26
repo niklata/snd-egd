@@ -4,9 +4,13 @@
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
 
+#define HOST_ENDIAN_LE 1
+
 #define MAX_PATH_LENGTH 1024
 #define MAX_BUF 1024
 #define MAXLINE 1024
+
+#define PAGE_SIZE 4096
 
 #define RANDOM_DEVICE               "/dev/random"
 #define DEFAULT_PID_FILE            "/var/run/snd-egd.pid"
