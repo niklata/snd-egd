@@ -27,8 +27,6 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#include <alsa/asoundlib.h>
-#include <linux/soundcard.h>
 #include <asm/types.h>
 #include <linux/random.h>
 #include <errno.h>
@@ -36,21 +34,16 @@
 #include "defines.h"
 #include "log.h"
 #include "util.h"
+#include "sound.h"
 #include "rb.h"
-#include "error.h"
 
 ring_buffer_t *rb;
 
-static char *cdevice = DEFAULT_HW_DEVICE;
-static const char *cdev_id = DEFAULT_HW_ITEM;
-static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
 static unsigned char max_bit = DEFAULT_MAX_BIT;
-static int snd_format = -1;
 
 static unsigned int skip_bytes = 0;
 
-static void main_loop(const char *cdevice);
-static int alsa_setparams(snd_pcm_t *chandle);
+static void main_loop(void);
 static void usage(void);
 static int vn_renorm_buf(char *buf8, size_t buf8size);
 static void get_random_data(int process_samples);
@@ -82,11 +75,11 @@ int main(int argc, char **argv)
 
         switch(c) {
             case 'i':
-                cdev_id = strdup(optarg);
+                sound_set_port(optarg);
                 break;
 
             case 'd':
-                cdevice = strdup(optarg);
+                sound_set_device(optarg);
                 break;
 
             case 'n':
@@ -103,10 +96,7 @@ int main(int argc, char **argv)
 
             case 'r':
                 t = atoi(optarg);
-                if (t > 0)
-                    sample_rate = t;
-                else
-                    sample_rate = DEFAULT_SAMPLE_RATE;
+                sound_set_sample_rate(t);
                 break;
 
             case 's':
@@ -152,71 +142,9 @@ int main(int argc, char **argv)
     if (gflags_detach)
         daemonize();
 
-    main_loop(cdevice);
+    main_loop();
 
     exit(0);
-}
-
-static int alsa_setparams(snd_pcm_t *chandle)
-{
-    int err;
-    snd_pcm_hw_params_t *ct_params;
-    snd_pcm_hw_params_alloca(&ct_params);
-
-    err = snd_pcm_hw_params_any(chandle, ct_params);
-    if (err < 0)
-        suicide("Broken configuration for %s PCM: no configurations available: %s",
-                   cdev_id, snd_strerror(err));
-
-    /* Disable rate resampling */
-    err = snd_pcm_hw_params_set_rate_resample(chandle, ct_params, 0);
-    if (err < 0)
-        suicide("Could not disable rate resampling: %s", snd_strerror(err));
-
-    /* Set access to SND_PCM_ACCESS_RW_INTERLEAVED */
-    err = snd_pcm_hw_params_set_access(chandle, ct_params,
-                                       SND_PCM_ACCESS_RW_INTERLEAVED);
-    if (err < 0)
-        suicide("Could not set access to SND_PCM_ACCESS_RW_INTERLEAVED: %s",
-                   snd_strerror(err));
-
-    /* Choose rate nearest to our target rate */
-    err = snd_pcm_hw_params_set_rate_near(chandle, ct_params, &sample_rate, 0);
-    if (err < 0)
-        suicide("Rate %iHz not available for %s: %s",
-                   sample_rate, cdev_id, snd_strerror(err));
-
-    /* Set sample format */
-#ifdef HOST_ENDIAN_LE
-    snd_format = SND_PCM_FORMAT_S16_LE;
-#else
-    snd_format = SND_PCM_FORMAT_S16_BE;
-#endif
-    err = snd_pcm_hw_params_set_format(chandle, ct_params, snd_format);
-    if (err < 0) {
-#ifdef HOST_ENDIAN_LE
-        snd_format = SND_PCM_FORMAT_S16_BE;
-#else
-        snd_format = SND_PCM_FORMAT_S16_LE;
-#endif
-        err = snd_pcm_hw_params_set_format(chandle, ct_params, snd_format);
-    }
-    if (err < 0)
-        suicide("Sample format (SND_PCM_FORMAT_S16_BE and _LE) not available for %s: %s",
-                   cdev_id, snd_strerror(err));
-
-    /* Set stereo */
-    err = snd_pcm_hw_params_set_channels(chandle, ct_params, 2);
-    if (err < 0)
-        suicide("Channels count (%i) not available for %s: %s",
-                   2, cdev_id, snd_strerror(err));
-
-    /* Apply settings to sound device */
-    err = snd_pcm_hw_params(chandle, ct_params);
-    if (err < 0)
-        suicide("Could not apply settings to sound device!");
-
-    return 0;
 }
 
 static void wait_for_watermark(int random_fd)
@@ -257,7 +185,7 @@ static int random_cur_bits(int random_fd)
     return ret;
 }
 
-static void main_loop(const char *cdevice)
+static void main_loop()
 {
     int random_fd = -1, max_bits;
     int i, before, wanted_bits;
@@ -429,12 +357,12 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufsize / 2); ++i) {
 #ifdef HOST_ENDIAN_LE
-        if (snd_format == SND_PCM_FORMAT_S16_BE) {
+        if (sound_is_be()) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
 #else
-        if (snd_format == SND_PCM_FORMAT_S16_LE) {
+        if (sound_is_le()) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
@@ -450,54 +378,27 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
 /* target = desired bytes of entropy that should be retrieved */
 static void get_random_data(int target)
 {
-    int total_in = 0, total_out = 0, err, i;
-    size_t bytes_per_frame;
+    int total_in = 0, total_out = 0, i;
     char buf[PAGE_SIZE];
-    snd_pcm_t *chandle;
-    snd_pcm_sframes_t garbage_frames;
-
-    if ((err = snd_pcm_open(&chandle, cdevice, SND_PCM_STREAM_CAPTURE, 0)) < 0)
-        suicide("Record open error: %s", snd_strerror(err));
-
-    /* Open and set up ALSA device for reading */
-    alsa_setparams(chandle);
 
     log_line(LOG_DEBUG, "get_random_data(%d)", target);
 
-    bytes_per_frame = snd_pcm_frames_to_bytes(chandle, 1);
+    sound_open();
+
     target = MIN(sizeof buf, target);
 
-    for (i = skip_bytes; i > 0; --i) {
-        /* Discard the first data read it often contains weird looking
-         * data - probably a click from driver loading or card initialization.
-         */
-        garbage_frames = snd_pcm_readi(chandle, buf,
-                                       (sizeof buf) / bytes_per_frame);
-
-        /* Make sure we aren't hitting a disconnect/suspend case */
-        if (garbage_frames < 0)
-            snd_pcm_recover(chandle, garbage_frames, 0);
-        /* Nope, something else is wrong. Bail. */
-        if (garbage_frames < 0)
-            suicide("get_random_data(): read error: %m");
-    }
+    /* Discard the initial data; it may be a click or something else odd. */
+    for (i = skip_bytes; i > 0; i -= (sizeof buf))
+        sound_read(buf, sizeof buf);
 
     while (total_out < target) {
-        snd_pcm_sframes_t frames_read;
-        frames_read = snd_pcm_readi(chandle, buf,
-                                    (sizeof buf) / bytes_per_frame);
-        /* Make sure we aren't hitting a disconnect/suspend case */
-        if (frames_read < 0)
-            frames_read = snd_pcm_recover(chandle, frames_read, 0);
-        /* Nope, something else is wrong. Bail. */
-        if (frames_read < 0 || (frames_read == -1 && errno != EINTR))
-            suicide("get_random_data(): Read error: %m");
+        sound_read(buf, sizeof buf);
         total_in += sizeof buf;
         total_out += vn_renorm_buf(buf, sizeof buf);
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }
 
-    snd_pcm_close(chandle);
+    sound_close();
 
     log_line(LOG_DEBUG, "get_random_data(): in->out bytes = %d->%d, eff = %f",
             total_in, total_out, (float)total_out / (float)total_in);
