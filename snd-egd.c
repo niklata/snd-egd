@@ -337,6 +337,68 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
     return wanted_bytes * 8;
 }
 
+typedef struct {
+    int prev_bits[16], bits_out, topbit, total_out;
+    unsigned char byte_out;
+} vn_renorm_int16_state_t;
+
+static void vn_renorm_int16_init(vn_renorm_int16_state_t *state, int topbit)
+{
+    int j;
+
+    if (!state)
+        return;
+    state->bits_out = 0;
+    state->byte_out = 0;
+    state->total_out = 0;
+    state->topbit = topbit;
+    for (j = 0; j < 16; ++j)
+        state->prev_bits[j] = -1;
+}
+
+static int vn_renorm_int16(vn_renorm_int16_state_t *state, int16_t i)
+{
+    int j, new = -1;
+
+    /* process bits */
+    for (j = 0; j < state->topbit; ++j) {
+        /* Select the bit of given significance. */
+        new = (i >> j) & 1;
+
+        /* We've not yet collected two bits; move on. */
+        if (state->prev_bits[j] == -1) {
+            state->prev_bits[j] = new;
+            continue;
+        }
+
+        /* If the bits are equal, discard both. */
+        if (state->prev_bits[j] == new) {
+            state->prev_bits[j] = -1;
+            continue;
+        }
+
+        /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
+         * is already marked as 0. */
+        if (state->prev_bits[j])
+            state->byte_out |= 1 << state->bits_out;
+        state->bits_out++;
+        state->prev_bits[j] = -1;
+
+        /* See if we've collected an entire byte.  If so, then copy
+         * it into the output buffer. */
+        if (state->bits_out == 8) {
+            state->total_out += rb_store_byte_xor(rb, state->byte_out);
+
+            state->bits_out = 0;
+            state->byte_out = 0;
+
+            if (rb_is_full(rb))
+                return 1;
+        }
+    }
+    return 0;
+}
+
 /*
  * We assume that the chance of a given bit in a sample being a 0 or 1 is not
  * equal.  It is thus a statistically unfair 'coin'.  We can nevertheless use
@@ -352,66 +414,36 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
 static int vn_renorm_buf(char *buf8, size_t buf8size)
 {
     int16_t *buf = (int16_t *)buf8;
-    size_t i, j, bufsize = buf8size / 2;
-    int total_out = 0, bits_out = 0, topbit, new = -1, prev[16];
-    unsigned char byte_out = 0;
+    size_t i, bufsize = buf8size / 2;
+    int topbit;
+    vn_renorm_int16_state_t state_L, state_R;
 
     if (!buf || !bufsize)
         suicide("vn_renorm_buf received a NULL arg");
 
-    for (j = 0; j < 16; ++j)
-        prev[j] = -1;
     topbit = MIN(max_bit, 16);
+    vn_renorm_int16_init(&state_L, topbit);
+    vn_renorm_int16_init(&state_R, topbit);
 
     /* Step through each 16-bit sample in the buffer one at a time. */
-    for (i = 0; i < bufsize; ++i) {
+    for (i = 0; i < (bufsize / 2); ++i) {
 #ifdef HOST_ENDIAN_LE
-        if (snd_format == SND_PCM_FORMAT_S16_BE)
-            endian_swap16(buf + i);
-#else
-        if (snd_format == SND_PCM_FORMAT_S16_LE)
-            endian_swap16(buf + i);
-#endif
-
-        /* process bits */
-        for (j = 0; j < topbit; ++j) {
-            /* Select the bit of given significance. */
-            new = (buf[i] >> j) & 1;
-
-            /* We've not yet collected two bits; move on. */
-            if (prev[j] == -1) {
-                prev[j] = new;
-                continue;
-            }
-
-            /* If the bits are equal, discard both. */
-            if (prev[j] == new) {
-                prev[j] = -1;
-                continue;
-            }
-
-            /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
-             * is already marked as 0. */
-            if (prev[j])
-                byte_out |= 1 << bits_out;
-            bits_out++;
-            prev[j] = -1;
-
-            /* See if we've collected an entire byte.  If so, then copy
-             * it into the output buffer. */
-            if (bits_out == 8) {
-                total_out += rb_store_byte_xor(rb, byte_out);
-
-                bits_out = 0;
-                byte_out = 0;
-
-                if (rb_is_full(rb))
-                    goto done;
-            }
+        if (snd_format == SND_PCM_FORMAT_S16_BE) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
         }
+#else
+        if (snd_format == SND_PCM_FORMAT_S16_LE) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
+        }
+#endif
+        if (vn_renorm_int16(&state_L, buf[2*i]))
+            break;
+        if (vn_renorm_int16(&state_R, buf[2*i+1]))
+            break;
     }
- done:
-    return total_out;
+    return state_L.total_out + state_R.total_out;
 }
 
 /* target = desired bytes of entropy that should be retrieved */
