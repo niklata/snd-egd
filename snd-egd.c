@@ -440,7 +440,7 @@ static int process_input(char *buf, char *bufend)
             /* See if we've collected an entire byte.  If so, then copy
              * it into the output buffer. */
             if (bits_out == 8) {
-                total_out += rb_store_byte(rb, byte_out);
+                total_out += rb_store_byte_xor(rb, byte_out);
 
                 bits_out = 0;
                 byte_out = 0;
@@ -477,7 +477,7 @@ static int process_input(char *buf, char *bufend)
             /* See if we've collected an entire byte.  If so, then copy
              * it into the output buffer. */
             if (bits_out == 8) {
-                total_out += rb_store_byte(rb, byte_out);
+                total_out += rb_store_byte_xor(rb, byte_out);
 
                 bits_out = 0;
                 byte_out = 0;

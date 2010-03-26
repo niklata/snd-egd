@@ -2,6 +2,7 @@
 #define _NK_RING_BUFFER_H_ 1
 
 #include "defines.h"
+#include "string.h"
 
 /*
  * Copyright 2010 Nicholas Kain <nicholas aatt kain.us>
@@ -30,6 +31,7 @@ static inline ring_buffer_t *rb_new(unsigned int size)
     rb->fill_idx = 0;
     rb->bytes = 0;
     rb->buf = malloc(size);
+    memset(rb->buf, '\0', size);
     return rb;
 }
 
@@ -62,6 +64,8 @@ static inline int rb_is_full(ring_buffer_t *rb)
 
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
 unsigned int rb_store_byte(ring_buffer_t *rb, char b);
+/* returns 1 if store successful, otherwise 0 (error or not enough room) */
+unsigned int rb_store_byte_xor(ring_buffer_t *rb, char b);
 /* returns 0 on success, a negative number if not enough bytes or error */
 int rb_move(ring_buffer_t *rb, char *buf, unsigned int bytes);
 

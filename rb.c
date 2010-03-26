@@ -42,6 +42,34 @@ unsigned int rb_store_byte(ring_buffer_t *rb, char b)
     return 0;
 }
 
+/* returns 1 if store successful, otherwise 0 (error or not enough room) */
+unsigned int rb_store_byte_xor(ring_buffer_t *rb, char b)
+{
+    if (!rb)
+        return 0;
+
+    /* Filling in space before the current index. */
+    if (rb->fill_idx < rb->index) {
+        rb->buf[rb->fill_idx++] ^= b;
+        rb->bytes++;
+        return 1;
+    } else if (rb->fill_idx > rb->index) {
+        if (rb->fill_idx < rb->size) {
+            /* Filling in space after the current index. */
+            rb->buf[rb->fill_idx++] ^= b;
+            rb->bytes++;
+            return 1;
+        } else {
+            if (rb->index > 0) {
+                rb->fill_idx = 0;
+                rb->buf[rb->fill_idx++] ^= b;
+                rb->bytes++;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
 /* returns 0 on success, a negative number if not enough bytes or error */
 int rb_move(ring_buffer_t *rb, char *buf, unsigned int bytes)
 {
