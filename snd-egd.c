@@ -34,6 +34,7 @@
 #include "defines.h"
 #include "log.h"
 #include "util.h"
+#include "amls.h"
 #include "sound.h"
 #include "rb.h"
 
@@ -352,19 +353,24 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
     vn_renorm_init(&state_L, topbit);
     vn_renorm_init(&state_R, topbit);
 
+#ifdef HOST_ENDIAN_BE
+    if (sound_is_le()) {
+        for (i = 0; i < (bufsize / 2); ++i) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
+        }
+    }
+#else
+    if (sound_is_be()) {
+        for (i = 0; i < (bufsize / 2); ++i) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
+        }
+    }
+#endif
+
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufsize / 2); ++i) {
-#ifdef HOST_ENDIAN_BE
-        if (sound_is_le()) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
-#else
-        if (sound_is_be()) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
-#endif
         if (vn_renorm(&state_L, buf[2*i]))
             break;
         if (vn_renorm(&state_R, buf[2*i+1]))
@@ -372,6 +378,84 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
     }
     return state_L.total_out + state_R.total_out;
 }
+
+#ifdef USE_AMLS
+static size_t amls_renorm_buf(char *buf8, size_t buf8size)
+{
+    int16_t *buf = (int16_t *)buf8;
+    char *in, *out, *outp;
+    size_t i, j;
+    size_t bufsize = buf8size / 2, insize = 0, amls_out = 0, total_out = 0;
+    int topbit, bits_out = 0;
+    char prev = -1;
+    unsigned char byte_out = 0;
+
+    if (!buf || !bufsize)
+        suicide("amls_renorm_buf received a NULL arg");
+
+    topbit = MIN(max_bit, 16);
+
+    in = alloca(bufsize * topbit);
+
+#ifdef HOST_ENDIAN_BE
+    if (sound_is_le()) {
+        for (i = 0; i < (bufsize / 2); ++i) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
+        }
+    }
+#else
+    if (sound_is_be()) {
+        for (i = 0; i < (bufsize / 2); ++i) {
+            endian_swap16(buf + 2*i);
+            endian_swap16(buf + 2*i + 1);
+        }
+    }
+#endif
+
+    for (i = 0; i < topbit; ++i) {
+        for (j = 0; j < (bufsize / 2); ++j) {
+            in[insize++] = (buf[2*j] >> i) & 1;
+            in[insize++] = (buf[2*j+1] >> i) & 1;
+        }
+    }
+
+    out = alloca(insize);
+    outp = out;
+    memset(out, '\0', insize);
+    amls_round(in, in + insize, &outp);
+    amls_out = outp - out;
+
+    for (i = 0; i < amls_out; ++i) {
+        if (prev == -1) {
+            prev = out[i];
+            continue;
+        }
+
+        if (prev == out[i]) {
+            prev = -1;
+            continue;
+        }
+
+        if (prev)
+            byte_out |= 1 << bits_out;
+        bits_out++;
+        prev = -1;
+
+        /* See if we've collected an entire byte.  If so, then copy
+         * it into the output buffer. */
+        if (bits_out == 8) {
+            total_out += rb_store_byte_xor(rb, byte_out);
+            bits_out = 0;
+            byte_out = 0;
+
+            if (rb_is_full(rb))
+                return total_out;
+        }
+    }
+    return total_out;
+}
+#endif
 
 /* target = desired bytes of entropy that should be retrieved */
 static void get_random_data(int target)
@@ -387,7 +471,11 @@ static void get_random_data(int target)
     while (total_out < target) {
         sound_read(buf, sizeof buf);
         total_in += sizeof buf;
+#ifdef USE_AMLS
+        total_out += amls_renorm_buf(buf, sizeof buf);
+#else
         total_out += vn_renorm_buf(buf, sizeof buf);
+#endif
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }
     sound_stop();

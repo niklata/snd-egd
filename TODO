@@ -1,5 +1,6 @@
 - Support poll()
 - Support /dev/dsp
 - Switch to using AMLS method of von Neumann's procedure
+- Use autoconf to select ALSA/OSS and little/big endian.
 - Manual page
 
