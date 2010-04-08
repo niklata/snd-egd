@@ -355,19 +355,14 @@ static int vn_renorm_buf(char *buf8, size_t buf8size)
 
 #ifdef HOST_ENDIAN_BE
     if (sound_is_le()) {
-        for (i = 0; i < (bufsize / 2); ++i) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
-    }
 #else
     if (sound_is_be()) {
+#endif
         for (i = 0; i < (bufsize / 2); ++i) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
     }
-#endif
 
     /* Step through each 16-bit sample in the buffer one at a time. */
     for (i = 0; i < (bufsize / 2); ++i) {
@@ -399,19 +394,14 @@ static size_t amls_renorm_buf(char *buf8, size_t buf8size)
 
 #ifdef HOST_ENDIAN_BE
     if (sound_is_le()) {
-        for (i = 0; i < (bufsize / 2); ++i) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
-    }
 #else
     if (sound_is_be()) {
+#endif
         for (i = 0; i < (bufsize / 2); ++i) {
             endian_swap16(buf + 2*i);
             endian_swap16(buf + 2*i + 1);
         }
     }
-#endif
 
     for (i = 0; i < topbit; ++i) {
         for (j = 0; j < (bufsize / 2); ++j) {
