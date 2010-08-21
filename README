@@ -1,82 +1,50 @@
-This program can convert analog sound signals into a source of entropy for
-the Linux kernel random number generator.  The quality of entropy generated
-is of course dependent on the input signal.  White noise from radio samples
-between broadcast radio signals (atmospheric noise) would be ideal,
-but just a simple disconnected microphone or line input connector on
-a sound card with sufficiently high gain will generate thermal noise.
+This program can convert analog sound signals into a source of entropy for the
+Linux kernel random number generator.  The quality of entropy generated is of
+course dependent on the input signal.  White noise from radio samples between
+broadcast radio signals (atmospheric noise) would be ideal, but just a simple
+disconnected microphone or line input connector on a sound card with
+sufficiently high gain will generate thermal noise.
 
 The input data is not merely fed into the KRNG without any transformations;
-whitening of the input data is first performed.  There are two different
-whitening methods implemented, but only one is compiled by default.
+whitening of the input data is first performed.
 
-The default (and recommended) method is simple and relatively fast.  A
-configurable number of bits (preference towards the least significant bits)
-are sampled from both the left and right input channels.  Each bit from
-each channel is treated as a unique bitstream.  For each input bitstream,
-von Neumann's method for normalizing the output of an unfair coin is
-performed, in order to remove any bias that may exist in the source
-signal (and sound card / ADC).  The output from each bitstream is interleaved
-together in a first-encountered, first-output manner to form the output data
-that is fed to the KRNG.  This approach is intentional, as it improves
-diffusion and makes it difficult to determine the source bitstream of any
-given output bit.
+The whitening method is simple and relatively fast.  A configurable number of
+bits (preference towards the least significant bits) are sampled from both the
+left and right input channels.  Each bit from each channel is treated as a
+unique bitstream.  For each input bitstream, von Neumann's method for
+normalizing the output of an unfair coin is performed, in order to remove any
+bias that may exist in the source signal (and sound card / ADC).  The output
+from each bitstream is interleaved together in a first-encountered,
+first-output manner to form the output data that is fed to the KRNG.  This
+approach is intentional, as it improves diffusion and makes it difficult to
+determine the source bitstream of any given output bit.
 
-Another, more complex whitening method is implemented, but is disabled
-by default and must be enabled at compile time.  It is conceptually
-similar to the previous approach, but implements a technique called
-the Advanced Multi-Level System (AMLS) instead of von Neumann's
-method.  AMLS uses an iterative application of von Neumann's method to
-generate more normalized output from a given source input than would
-be produced by simple application of von Neumann's method.  In other
-words, it generates more usable output from a given input, without a
-reduction in entropy quality.  There is of course a cost: speed and
-space -- AMLS is much slower than a simple application of von
-Neumann's method.  In my benchmarks on a rather fast machine, von
-Neumann's method was 8x faster than AMLS, measured as a function of
-CPU time consumed; AMLS also uses more memory, as it requires
-intermediate buffers for the iterative applications of von Neumann's
-method.  The increase in entropy generation efficiency was only around
-15%, so at least in my testing conditions, there was no advantage to
-using AMLS in this particular application.  I have left the code for
-reference purposes, but have disabled compilation of it by default.
-For a data source that generated entropy much more slowly than a sound
-card, AMLS could be a win.
+I once implemented another, more complex scheme called AMLS (Advanced
+Multi-Level System), but it was far slower and took more space.  It may be a
+win for a data source that generates entropy much more slowly than a sound
+card, but a sound card has no need to spare every possible bit.
 
-Using either of these methods should be fine assuming that the change
-in probability of a 1 or 0 bit for any given input bitstream is
-continuous with respect to time.  Since temperature is probably the
-largest influence in real world situations, this assumption should be
-fine.
+Using either of these methods should be fine assuming that the change in
+probability of a 1 or 0 bit for any given input bitstream is continuous with
+respect to time.  This is ensured by using the absolute difference in value
+between samples per channel.  Since temperature is probably the largest
+influence in real world situations, this assumption should be fine.
 
-Speed of random number generation is dependent on having
-well-distributed input bitstreams.  This will be mostly dependent on
-having proper mixer settings.
+Speed of random number generation is dependent on having well-distributed input
+bitstreams.  This will be mostly dependent on having proper mixer settings.
 
-This approach will sacrifice a lot of speed compared to direct
-sampling of soundcard data (with von Neumann's method, and all input
-bits used, throughput will be reduced to no faster than 50% of the
-unprocessed speed; AMLS manages perhaps 65%), but should ensure a
-higher degree of quasi-randomness.  These values are upper bounds;
-in practice, the throughput loss from normalization will be much
-greater.
+This approach will sacrifice a lot of speed compared to direct sampling of
+soundcard data (with von Neumann's method, and all input bits used, throughput
+will be reduced to no faster than 50% of the unprocessed speed; 30% is more
+typical), but should ensure a higher degree of quasi-randomness.  These values
+are upper bounds; in practice, the throughput loss from normalization will be
+much greater.
 
-For higher performance, the amount of data sampled from the sound card
-varies dynamically to keep a static ring buffer of entropy filled with
-minimum waste.
+For higher performance, the amount of data sampled from the sound card varies
+dynamically to keep a static ring buffer of entropy filled with minimum waste.
 
-Entropy quality is no longer checked, since it is only possible to
-discard obviously non-normalized inputs, and normalization is performed
-by default.  Entropy quality will be dependent on the source of the
-input signal.
+Entropy quality is not checked, since it is only possible to discard obviously
+non-normalized inputs, and normalization is performed by default.  Entropy
+quality will be dependent on the source of the input signal.
 
 - Nicholas Kain ( njk aaaaaaat kain dot us )
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The idea for this program was originally by Damien Miller <djm@mindrot.org>.
-Since then, a few changes have made.
-Especially the algorithm was redone.
-Sample-freq was set low, volume to very low to record especially the noise, data is then biased and entropy is calculated.
-Also added code that verifies the random data before submitting it to the kernel.
-
---- folkert@vanheusden.com
-

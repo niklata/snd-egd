@@ -46,7 +46,6 @@
 ring_buffer_t rb;
 
 unsigned int stats[2][256];
-int use_amls = 0;
 
 struct pool_buffer_t {
     struct rand_pool_info info;
@@ -68,40 +67,36 @@ int main(int argc, char **argv)
 {
     int c, random_fd = -1, uid = -1, gid = -1;
     struct option long_options[] = {
-            {"device",  1, NULL, 'd' },
-            {"port", 1, NULL, 'i' },
-            {"max-bit", 1, NULL, 'b' },
-            {"do-not-fork", 1, NULL, 'n' },
-            {"sample-rate", 1, NULL, 'r' },
-            {"skip-bytes", 1, NULL, 's' },
-            {"pid-file", 1, NULL, 'p' },
-            {"uid", 1, NULL, 'u'},
-            {"gid", 1, NULL, 'g'},
-            {"verbose", 0, NULL, 'v' },
-            {"help",    0, NULL, 'h' },
-            {NULL,      0, NULL, 0   }
-        };
+        {"device",  1, NULL, 'd'},
+        {"port", 1, NULL, 'i'},
+        {"max-bit", 1, NULL, 'b'},
+        {"do-not-fork", 1, NULL, 'n'},
+        {"sample-rate", 1, NULL, 'r'},
+        {"skip-bytes", 1, NULL, 's'},
+        {"pid-file", 1, NULL, 'p'},
+        {"uid", 1, NULL, 'u'},
+        {"gid", 1, NULL, 'g'},
+        {"verbose", 0, NULL, 'v'},
+        {"help", 0, NULL, 'h'},
+        {NULL, 0, NULL, 0 }
+    };
 
     /* Process commandline options */
     while (1) {
         int t;
 
-        c = getopt_long (argc, argv, "i:d:b:nr:s:p:u:g:vh",
+        c = getopt_long (argc, argv, "d:i:b:nr:s:p:u:g:vh",
                          long_options, NULL);
         if (c == -1)
             break;
 
         switch(c) {
-            case 'i':
-                sound_set_port(optarg);
-                break;
-
             case 'd':
                 sound_set_device(optarg);
                 break;
 
-            case 'n':
-                gflags_detach = 0;
+            case 'i':
+                sound_set_port(optarg);
                 break;
 
             case 'b':
@@ -112,14 +107,18 @@ int main(int argc, char **argv)
                     max_bit = DEFAULT_MAX_BIT;
                 break;
 
-            case 'r':
-                t = atoi(optarg);
-                sound_set_sample_rate(t);
+            case 'n':
+                gflags_detach = 0;
                 break;
 
             case 's':
                 t = atoi(optarg);
                 sound_set_skip_bytes(t);
+                break;
+
+            case 'r':
+                t = atoi(optarg);
+                sound_set_sample_rate(t);
                 break;
 
             case 'p':
@@ -341,15 +340,10 @@ static void get_random_data(int target)
         }
 
         if (frames > 0) {
-            if (use_amls) {
-                total_out += amls_renorm_buf(leftbuf, frames, 0);
-                total_out += amls_renorm_buf(rightbuf, frames, 1);
-            } else {
-                leftstate.stats = 0;
-                total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
-                rightstate.stats = 1;
-                total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
-            }
+            leftstate.stats = 0;
+            total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
+            rightstate.stats = 1;
+            total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
         }
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }

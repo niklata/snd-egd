@@ -6,10 +6,10 @@ LFLAGS = -lm -lasound -lcap
 
 TARGETS = snd-egd
 
-all: $(TARGETS) 
+all: $(TARGETS)
 
-snd-egd: vn.o amls.o util.o log.o rb.o alsa.o snd-egd.o
-	$(CC) -o $@ $^ $(LFLAGS) 
+snd-egd: vn.o util.o log.o rb.o alsa.o snd-egd.o
+	$(CC) -o $@ $^ $(LFLAGS)
 
 install: snd-egd
 	cp snd-egd /usr/local/sbin/
