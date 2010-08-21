@@ -1,5 +1,7 @@
-#ifndef _NK_RING_BUFFER_H_
-#define _NK_RING_BUFFER_H_ 1
+#ifndef NK_RING_BUFFER_H_
+#define NK_RING_BUFFER_H_ 1
+
+#include <sys/mman.h>
 
 #include "defines.h"
 #include "string.h"
@@ -29,6 +31,7 @@ static inline void rb_init(ring_buffer_t *rb)
     rb->index = RB_SIZE;
     rb->fill_idx = 0;
     rb->bytes = 0;
+    mlock(rb->buf, RB_SIZE);
     memset(rb->buf, '\0', RB_SIZE);
 }
 

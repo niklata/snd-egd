@@ -209,9 +209,6 @@ int main(int argc, char **argv)
 
     sound_open();
 
-    if (mlockall(MCL_FUTURE | MCL_CURRENT) == -1)
-        suicide("mlockall failed");
-
     if (gflags_detach)
         daemonize();
 
@@ -226,6 +223,8 @@ int main(int argc, char **argv)
         drop_privs(uid, gid);
 
     memset(stats, 0, sizeof stats);
+    if (mlockall(MCL_FUTURE))
+        suicide("mlockall failed");
 
     main_loop(random_fd, max_bits);
 
