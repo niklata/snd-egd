@@ -42,7 +42,7 @@
 #include "sound.h"
 #include "rb.h"
 
-ring_buffer_t *rb;
+ring_buffer_t rb;
 
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 
@@ -233,12 +233,12 @@ static void main_loop(int random_fd, int max_bits)
     int i, before, wanted_bits, max_bytes;
     struct rand_pool_info *output;
 
-    rb = rb_new(RB_SIZE);
+    rb_init(&rb);
 
     sound_open();
 
     /* Prefill entropy buffer */
-    get_random_data(rb->size - rb->bytes);
+    get_random_data(rb.size - rb.bytes);
 
     max_bytes = max_bits / 8;
     if (max_bits & 7)
@@ -264,7 +264,7 @@ static void main_loop(int random_fd, int max_bits)
         for (i = 0; i < wanted_bits;)
             i += ioc_rndaddentropy(output, random_fd, wanted_bits - i);
 
-        get_random_data(rb->size - rb->bytes);
+        get_random_data(rb.size - rb.bytes);
     }
     sound_close();
     free(output);
@@ -285,21 +285,21 @@ static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
     if (wanted_bits & 7)
         ++wanted_bytes;
 
-    total_cur_bytes = rb_num_bytes(rb);
+    total_cur_bytes = rb_num_bytes(&rb);
 
     if (total_cur_bytes < wanted_bytes)
         wanted_bytes = total_cur_bytes;
 
     output->entropy_count = wanted_bytes * 8;
     output->buf_size = wanted_bytes;
-    if (rb_move(rb, (char *)output->buf, wanted_bytes) == -1)
+    if (rb_move(&rb, (char *)output->buf, wanted_bytes) == -1)
         suicide("rb_move() failed");
 
     if (ioctl(handle, RNDADDENTROPY, output) == -1)
         suicide("RNDADDENTROPY failed!");
 
     log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
-             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(rb) * 8);
+             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
 }
@@ -355,12 +355,12 @@ static int vn_renorm(vn_renorm_state_t *state, int i)
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
         if (state->bits_out == 8) {
-            state->total_out += rb_store_byte_xor(rb, state->byte_out);
+            state->total_out += rb_store_byte_xor(&rb, state->byte_out);
 
             state->bits_out = 0;
             state->byte_out = 0;
 
-            if (rb_is_full(rb))
+            if (rb_is_full(&rb))
                 return 1;
         }
     }

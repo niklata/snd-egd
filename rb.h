@@ -15,7 +15,7 @@
  */
 
 typedef struct {
-    char *buf;
+    char buf[RB_SIZE];
     unsigned int size; /* max size of the buffer in bytes */
     unsigned int bytes; /* current size of the buffer in bytes */
     unsigned int index;
@@ -23,25 +23,13 @@ typedef struct {
 } ring_buffer_t;
 
 /* creates a new, empty ring buffer */
-static inline ring_buffer_t *rb_new(unsigned int size)
+static inline void rb_init(ring_buffer_t *rb)
 {
-    ring_buffer_t *rb = malloc(sizeof (ring_buffer_t));
-    rb->size = size;
-    rb->index = size;
+    rb->size = RB_SIZE;
+    rb->index = RB_SIZE;
     rb->fill_idx = 0;
     rb->bytes = 0;
-    rb->buf = malloc(size);
-    memset(rb->buf, '\0', size);
-    return rb;
-}
-
-/* deletes the ring buffer */
-static inline void rb_delete(ring_buffer_t *rb)
-{
-    if (!rb)
-        return;
-    free(rb->buf);
-    free(rb);
+    memset(rb->buf, '\0', RB_SIZE);
 }
 
 /* returns number of bytes stored in the ring buffer */
