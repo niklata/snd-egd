@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2008-2010 Nicholas J. Kain <nicholas aatt kain.us>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <alsa/asoundlib.h>
 #include <linux/soundcard.h>
 
@@ -35,7 +52,8 @@ void sound_open(void)
     if (err < 0)
         suicide("Could not disable rate resampling: %s", snd_strerror(err));
 
-    /* Set access to SND_PCM_ACCESS_RW_INTERLEAVED */
+    /* Set access to SND_PCM_ACCESS_RW_INTERLEAVED -- NONINTERLEAVED would
+     * be preferable, but it's uncommon on sound cards.*/
     err = snd_pcm_hw_params_set_access(pcm_handle, ct_params,
                                        SND_PCM_ACCESS_RW_INTERLEAVED);
     if (err < 0)
@@ -48,7 +66,7 @@ void sound_open(void)
         suicide("Rate %iHz not available for %s: %s",
                    sample_rate, cdev_id, snd_strerror(err));
 
-    /* Set sample format */
+    /* Set sample format -- prefer endianness equal to that of the CPU */
 #ifdef HOST_ENDIAN_BE
     snd_format = SND_PCM_FORMAT_S16_BE;
 #else
@@ -67,7 +85,7 @@ void sound_open(void)
         suicide("Sample format (SND_PCM_FORMAT_S16_BE and _LE) not available for %s: %s",
                    cdev_id, snd_strerror(err));
 
-    /* Set stereo */
+    /* Set stereo for faster sampling. */
     err = snd_pcm_hw_params_set_channels(pcm_handle, ct_params, 2);
     if (err < 0)
         suicide("Channels count (%i) not available for %s: %s",
