@@ -41,31 +41,22 @@
 #include "amls.h"
 #include "sound.h"
 #include "rb.h"
+#include "vn.h"
 
 ring_buffer_t rb;
 
 unsigned int stats[2][256];
+int use_amls = 0;
 
 struct pool_buffer_t {
     struct rand_pool_info info;
     char buf[POOL_BUFFER_SIZE];
 };
 
-static unsigned char max_bit = DEFAULT_MAX_BIT;
+unsigned char max_bit = DEFAULT_MAX_BIT;
 
 static void main_loop(int random_fd, int max_bits);
 static void usage(void);
-
-
-typedef struct {
-    int bits_out, topbit, total_out;
-    int stats;
-    char prev_bits[16];
-    unsigned char byte_out;
-} vn_renorm_state_t;
-
-static int vn_renorm_buf(uint16_t buf[], size_t bufsize,
-                         vn_renorm_state_t *state);
 
 static void get_random_data(int process_samples);
 static int random_max_bits(int random_fd);
@@ -319,196 +310,6 @@ static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
     return wanted_bytes * 8;
 }
 
-static void vn_renorm_init(vn_renorm_state_t *state)
-{
-    int j;
-
-    if (!state)
-        return;
-    state->bits_out = 0;
-    state->byte_out = 0;
-    state->total_out = 0;
-    state->stats = 0;
-    state->topbit = MIN(max_bit, 16);
-    for (j = 0; j < 16; ++j)
-        state->prev_bits[j] = -1;
-}
-
-static int vn_renorm(vn_renorm_state_t *state, uint16_t i)
-{
-    unsigned int j, new;
-
-    /* process bits */
-    for (j = 0; j < state->topbit; ++j) {
-        /* Select the bit of given significance. */
-        new = (i >> j) & 0x01;
-        /* log_line(LOG_DEBUG, "j=%d, prev_bits[j]=%d, new=%d", j, state->prev_bits[j], new); */
-
-        /* We've not yet collected two bits; move on. */
-        if (state->prev_bits[j] == -1) {
-            state->prev_bits[j] = new;
-            continue;
-        }
-
-        /* If the bits are equal, discard both. */
-        if (state->prev_bits[j] == new) {
-            state->prev_bits[j] = -1;
-            continue;
-        }
-
-        /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
-         * is already marked as 0. */
-        if (state->prev_bits[j])
-            state->byte_out |= 1 << state->bits_out;
-        state->bits_out++;
-        state->prev_bits[j] = -1;
-
-        /* See if we've collected an entire byte.  If so, then copy
-         * it into the output buffer. */
-        if (state->bits_out == 8) {
-            stats[state->stats][state->byte_out] += 1;
-            state->total_out += rb_store_byte_xor(&rb, state->byte_out);
-
-            state->bits_out = 0;
-            state->byte_out = 0;
-
-            if (rb_is_full(&rb))
-                return 1;
-        }
-    }
-    return 0;
-}
-
-/* static int vn_renorm_2(unsigned char buf[], size_t size) */
-/* { */
-/*     int i, j; */
-/*     int bit, prev_bit = -1, bits_out = 0, total_out = 0; */
-/*     unsigned char byte_out = 0; */
-
-/*     for (i = 0; i < size; ++i) { */
-/*         bit = buf[i] & 0x01; */
-/*         if (prev_bit != -1) { */
-/*             if (prev_bit == bit) { */
-/*                 prev_bit = -1; */
-/*                 continue; */
-/*             } */
-/*             if (prev_bit == 1) */
-/*                 byte_out |= 1 << bits_out; */
-/*             bits_out++; */
-/*             prev_bit = -1; */
-
-/*             if (bits_out == 8) { */
-/*                 stats[byte_out] += 1; */
-/*                 total_out += rb_store_byte_xor(&rb, byte_out); */
-
-/*                 bits_out = 0; */
-/*                 byte_out = 0; */
-
-/*                 if (rb_is_full(&rb)) */
-/*                     return 1; */
-/*             } */
-/*         } else { */
-/*             prev_bit = bit; */
-/*         } */
-/*     } */
-/*     return total_out; */
-/* } */
-
-/*
- * We assume that the chance of a given bit in a sample being a 0 or 1 is not
- * equal.  It is thus a statistically unfair 'coin'.  We can nevertheless use
- * this sample as if it were a fair 'coin' if we use a special procedure:
- *
- * 1. Take a pair of bits of fixed significance in the output
- * 2. If 01, treat as a zero bit.
- * 3. If 10, treat as a one bit.
- * 4. Otherwise, discard as no result.
- *
- * @return number of bytes that were added to the entropy buffer
- */
-static int vn_renorm_buf(uint16_t buf[], size_t bufsize,
-                         vn_renorm_state_t *state)
-{
-    size_t i;
-
-    if (!buf || !bufsize)
-        return 0;
-
-#ifdef HOST_ENDIAN_BE
-    if (sound_is_le()) {
-#else
-    if (sound_is_be()) {
-#endif
-        for (i = 0; i < bufsize; ++i)
-            buf[i] = endian_swap16(buf[i]);
-    }
-
-    /* Step through each 16-bit sample in the buffer one at a time. */
-    for (i = 0; i < bufsize; ++i) {
-        vn_renorm(state, buf[i]);
-    }
-    return state->total_out;
-    /* return vn_renorm_2(buf, bufsize); */
-}
-
-#ifdef USE_AMLS
-static size_t amls_renorm_buf(uint16_t buf[], size_t bufsize, int stats)
-{
-    char *in, *out, *outp;
-    size_t i, j;
-    size_t insize = 0, amls_out = 0, total_out = 0;
-    int topbit, bits_out = 0;
-    char prev = -1;
-    unsigned char byte_out = 0;
-
-    if (!buf || !bufsize)
-        return 0;
-
-    topbit = MIN(max_bit, 16);
-
-    in = alloca(bufsize * topbit);
-
-#ifdef HOST_ENDIAN_BE
-    if (sound_is_le()) {
-#else
-    if (sound_is_be()) {
-#endif
-        for (i = 0; i < bufsize; ++i)
-            buf[i] = endian_swap16(buf[i]);
-    }
-
-    for (i = 0; i < topbit; ++i) {
-        for (j = 0; j < bufsize; ++j) {
-            in[insize++] = (buf[j] >> i) & 1;
-        }
-    }
-
-    out = alloca(insize);
-    outp = out;
-    memset(out, '\0', insize);
-    amls_round(in, in + insize, &outp);
-    amls_out = outp - out;
-
-    for (i = 0; i < amls_out; ++i) {
-        byte_out |= out[i] << bits_out;
-        bits_out++;
-
-        /* See if we've collected an entire byte.  If so, then copy
-         * it into the output buffer. */
-        if (bits_out == 8) {
-            stats[byte_out] += 1;
-            total_out += rb_store_byte_xor(&rb, byte_out);
-            bits_out = 0;
-            byte_out = 0;
-
-            if (rb_is_full(&rb))
-                return total_out;
-        }
-    }
-    return total_out;
-}
-#endif
-
 /* target = desired bytes of entropy that should be retrieved */
 static void get_random_data(int target)
 {
@@ -538,19 +339,18 @@ static void get_random_data(int target)
             leftbuf[i] = abs(buf[i+1].s16[0] - buf[i].s16[0]);
             rightbuf[i] = abs(buf[i+1].s16[1] - buf[i].s16[1]);
         }
-#ifdef USE_AMLS
+
         if (frames > 0) {
-            total_out += amls_renorm_buf(leftbuf, frames, 0);
-            total_out += amls_renorm_buf(rightbuf, frames, 1);
+            if (use_amls) {
+                total_out += amls_renorm_buf(leftbuf, frames, 0);
+                total_out += amls_renorm_buf(rightbuf, frames, 1);
+            } else {
+                leftstate.stats = 0;
+                total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
+                rightstate.stats = 1;
+                total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
+            }
         }
-#else
-        if (frames > 0) {
-            leftstate.stats = 0;
-            total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
-            rightstate.stats = 1;
-            total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
-        }
-#endif
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }
     sound_stop();

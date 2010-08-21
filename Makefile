@@ -8,7 +8,7 @@ TARGETS = snd-egd
 
 all: $(TARGETS) 
 
-snd-egd: amls.o util.o log.o rb.o alsa.o snd-egd.o
+snd-egd: vn.o amls.o util.o log.o rb.o alsa.o snd-egd.o
 	$(CC) -o $@ $^ $(LFLAGS) 
 
 install: snd-egd
