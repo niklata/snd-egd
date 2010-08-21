@@ -33,7 +33,7 @@ void daemonize(void)
     write_pidfile();
 }
 
-extern unsigned int stats[256];
+extern unsigned int stats[2][256];
 
 void gracefully_exit(int signum)
 {
@@ -43,7 +43,7 @@ void gracefully_exit(int signum)
     sound_close();
     log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
     for (int i = 0; i < 256; ++i) {
-        log_line(LOG_DEBUG, "%i:\t %d", i, stats[i]);
+        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
     }
     exit(0);
 }

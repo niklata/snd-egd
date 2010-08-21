@@ -42,11 +42,9 @@
 #include "sound.h"
 #include "rb.h"
 
-#define USE_AMLS 1
-
 ring_buffer_t rb;
 
-unsigned int stats[256];
+unsigned int stats[2][256];
 
 struct pool_buffer_t {
     struct rand_pool_info info;
@@ -61,6 +59,7 @@ static void usage(void);
 
 typedef struct {
     int bits_out, topbit, total_out;
+    int stats;
     char prev_bits[16];
     unsigned char byte_out;
 } vn_renorm_state_t;
@@ -329,6 +328,7 @@ static void vn_renorm_init(vn_renorm_state_t *state)
     state->bits_out = 0;
     state->byte_out = 0;
     state->total_out = 0;
+    state->stats = 0;
     state->topbit = MIN(max_bit, 16);
     for (j = 0; j < 16; ++j)
         state->prev_bits[j] = -1;
@@ -366,7 +366,7 @@ static int vn_renorm(vn_renorm_state_t *state, uint16_t i)
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
         if (state->bits_out == 8) {
-            stats[state->byte_out] += 1;
+            stats[state->stats][state->byte_out] += 1;
             state->total_out += rb_store_byte_xor(&rb, state->byte_out);
 
             state->bits_out = 0;
@@ -452,7 +452,7 @@ static int vn_renorm_buf(uint16_t buf[], size_t bufsize,
 }
 
 #ifdef USE_AMLS
-static size_t amls_renorm_buf(uint16_t buf[], size_t bufsize)
+static size_t amls_renorm_buf(uint16_t buf[], size_t bufsize, int stats)
 {
     char *in, *out, *outp;
     size_t i, j;
@@ -513,8 +513,8 @@ static size_t amls_renorm_buf(uint16_t buf[], size_t bufsize)
 static void get_random_data(int target)
 {
     union frame_t {
-        uint16_t u16[2];
-        uint32_t u32;
+        int16_t s16[2];
+        int32_t s32;
     };
     int total_in = 0, total_out = 0, frames = 0, framesize = 0, i;
     union frame_t buf[PAGE_SIZE / 4];
@@ -534,18 +534,20 @@ static void get_random_data(int target)
         framesize = sound_bytes_per_frame();
         total_in += frames * framesize;
         log_line(LOG_DEBUG, "total_in = %d, frames = %d", total_in, frames);
-        for (i = 0; i < frames; ++i) {
-            leftbuf[i] = buf[i].u16[0];
-            rightbuf[i] = buf[i].u16[1];
+        for (i = 0; i < frames - 1; ++i) {
+            leftbuf[i] = abs(buf[i+1].s16[0] - buf[i].s16[0]);
+            rightbuf[i] = abs(buf[i+1].s16[1] - buf[i].s16[1]);
         }
 #ifdef USE_AMLS
         if (frames > 0) {
-            total_out += amls_renorm_buf(leftbuf, frames);
-            total_out += amls_renorm_buf(rightbuf, frames);
+            total_out += amls_renorm_buf(leftbuf, frames, 0);
+            total_out += amls_renorm_buf(rightbuf, frames, 1);
         }
 #else
         if (frames > 0) {
+            leftstate.stats = 0;
             total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
+            rightstate.stats = 1;
             total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
         }
 #endif
