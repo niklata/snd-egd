@@ -54,6 +54,8 @@ struct pool_buffer_t {
 
 unsigned char max_bit = DEFAULT_MAX_BIT;
 
+static char *chroot_path;
+
 static void main_loop(int random_fd, int max_bits);
 static void usage(void);
 
@@ -63,7 +65,7 @@ static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits);
 static void drop_privs(int uid, int gid);
 
-int parse_user(char *username, int *gid)
+static int parse_user(char *username, int *gid)
 {
     int t;
     char *p;
@@ -81,7 +83,7 @@ int parse_user(char *username, int *gid)
     return t;
 }
 
-int parse_group(char *groupname)
+static int parse_group(char *groupname)
 {
     int t;
     char *p;
@@ -108,8 +110,9 @@ int main(int argc, char **argv)
         {"sample-rate", 1, NULL, 'r'},
         {"skip-bytes", 1, NULL, 's'},
         {"pid-file", 1, NULL, 'p'},
-        {"uid", 1, NULL, 'u'},
-        {"gid", 1, NULL, 'g'},
+        {"user", 1, NULL, 'u'},
+        {"group", 1, NULL, 'g'},
+        {"chroot", 1, NULL, 'c'},
         {"verbose", 0, NULL, 'v'},
         {"help", 0, NULL, 'h'},
         {NULL, 0, NULL, 0 }
@@ -119,8 +122,8 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long (argc, argv, "d:i:b:nr:s:p:u:g:vh",
-                         long_options, NULL);
+        c = getopt_long(argc, argv, "d:i:b:nr:s:p:u:g:c:vh",
+                        long_options, NULL);
         if (c == -1)
             break;
 
@@ -167,6 +170,10 @@ int main(int argc, char **argv)
                 gid = parse_group(optarg);
                 break;
 
+            case 'c':
+                chroot_path = strdup(optarg);
+                break;
+
             case 'v':
                 gflags_debug = 1;
                 break;
@@ -200,11 +207,20 @@ int main(int argc, char **argv)
     /* Find out the kernel entropy pool size */
     int max_bits = random_max_bits(random_fd);
 
+    sound_open();
+
     if (mlockall(MCL_FUTURE | MCL_CURRENT) == -1)
         suicide("mlockall failed");
 
     if (gflags_detach)
         daemonize();
+
+    if (chroot_path) {
+        if (chdir(chroot_path))
+            suicide("chdir chroot failed");
+        if (chroot(chroot_path))
+            suicide("chroot failed");
+    }
 
     if (uid != -1 && gid != -1)
         drop_privs(uid, gid);
@@ -278,8 +294,6 @@ static void main_loop(int random_fd, int max_bits)
     struct pool_buffer_t poolbuf;
 
     rb_init(&rb);
-
-    sound_open();
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
@@ -396,8 +410,11 @@ static void usage(void)
     log_line(LOG_NOTICE, "--item,         -i []  Specify item on the device that we sample from. (Default %s)", DEFAULT_HW_ITEM);
     log_line(LOG_NOTICE, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)", DEFAULT_MAX_BIT);
     log_line(LOG_NOTICE, "--sample-rate,  -r []  Audio sampling rate. (default %i)", DEFAULT_SAMPLE_RATE);
-    log_line(LOG_NOTICE, "--skip-bytes, -s []  Ignore the first N audio bytes after opening device. (default %i)", DEFAULT_SKIP_BYTES);
+    log_line(LOG_NOTICE, "--skip-bytes,   -s []  Ignore the first N audio bytes after opening device. (default %i)", DEFAULT_SKIP_BYTES);
     log_line(LOG_NOTICE, "--pid-file,     -p []  Path where the PID file will be created. (default %s)", DEFAULT_PID_FILE);
+    log_line(LOG_NOTICE, "--user          -u []  User name or id to change to after dropping privileges.");
+    log_line(LOG_NOTICE, "--group         -g []  Group name or id to change to after dropping privileges.");
+    log_line(LOG_NOTICE, "--chroot        -c []  Directory to use as the chroot jail.");
     log_line(LOG_NOTICE, "--do-not-fork   -n     Do not fork.");
     log_line(LOG_NOTICE, "--verbose,      -v     Be verbose.");
     log_line(LOG_NOTICE, "--help,         -h     This help.");
