@@ -12,7 +12,6 @@
  */
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <math.h>
 #include <getopt.h>
 #include <unistd.h>
@@ -135,7 +134,7 @@ int main(int argc, char **argv)
 
             case '?':
             default:
-                fprintf(stderr, "Invalid commandline options.\n\n");
+                log_line(LOG_NOTICE, "fatal: invalid command line options");
             usage();
             exit(1);
         }
@@ -205,15 +204,17 @@ static void wait_for_watermark(int random_fd)
 
 static int random_max_bits(int random_fd)
 {
-    int ret;
-    FILE *poolsize_fh;
+    int ret, fd;
+    char buf[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    poolsize_fh = fopen(DEFAULT_POOLSIZE_FN, "rb");
-    if (!poolsize_fh)
-        suicide("Couldn't open poolsize file: %m");
-    if (fscanf(poolsize_fh, "%d", &ret) != 1)
-        suicide("Failed to read from poolsize file!");
-    fclose(poolsize_fh);
+    fd = open(DEFAULT_POOLSIZE_FN, O_RDONLY);
+    if (!fd)
+        suicide("couldn't open poolsize procfs file");
+    if (read(fd, buf, sizeof buf - 1) == -1)
+        suicide("failed to read poolsize procfs file");
+    ret = atoi(buf);
+    if (ret < 1)
+        suicide("poolsize can never be less than 1");
     return ret;
 }
 
@@ -512,19 +513,17 @@ static void get_random_data(int target)
 
 static void usage(void)
 {
-    fprintf(stderr, "Usage: snd-egd [options]\n\n");
-    fprintf(stderr, "Collect entropy from a soundcard and feed it into the kernel random pool.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "--device,       -d []  Specify sound device to use. (Default %s)\n", DEFAULT_HW_DEVICE);
-    fprintf(stderr, "--item,         -i []  Specify item on the device that we sample from. (Default %s)\n", DEFAULT_HW_ITEM);
-    fprintf(stderr, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)\n", DEFAULT_MAX_BIT);
-    fprintf(stderr, "--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
-    fprintf(stderr, "--skip-bytes, -s []  Ignore the first N audio bytes after opening device. (default %i)\n", DEFAULT_SKIP_BYTES);
-    fprintf(stderr, "--pid-file,     -p []  Path where the PID file will be created. (default %s)\n", DEFAULT_PID_FILE);
-    fprintf(stderr, "--do-not-fork   -n     Do not fork.\n");
-    fprintf(stderr, "--verbose,      -v     Be verbose.\n");
-    fprintf(stderr, "--help,         -h     This help.\n");
-    fprintf(stderr, "\n");
+    log_line(LOG_NOTICE, "Usage: snd-egd [options]\n");
+    log_line(LOG_NOTICE, "Collect entropy from a soundcard and feed it into the kernel random pool.");
+    log_line(LOG_NOTICE, "Options:");
+    log_line(LOG_NOTICE, "--device,       -d []  Specify sound device to use. (Default %s)", DEFAULT_HW_DEVICE);
+    log_line(LOG_NOTICE, "--item,         -i []  Specify item on the device that we sample from. (Default %s)", DEFAULT_HW_ITEM);
+    log_line(LOG_NOTICE, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)", DEFAULT_MAX_BIT);
+    log_line(LOG_NOTICE, "--sample-rate,  -r []  Audio sampling rate. (default %i)", DEFAULT_SAMPLE_RATE);
+    log_line(LOG_NOTICE, "--skip-bytes, -s []  Ignore the first N audio bytes after opening device. (default %i)", DEFAULT_SKIP_BYTES);
+    log_line(LOG_NOTICE, "--pid-file,     -p []  Path where the PID file will be created. (default %s)", DEFAULT_PID_FILE);
+    log_line(LOG_NOTICE, "--do-not-fork   -n     Do not fork.");
+    log_line(LOG_NOTICE, "--verbose,      -v     Be verbose.");
+    log_line(LOG_NOTICE, "--help,         -h     This help.");
 }
 
