@@ -1,40 +1,33 @@
 /*
- * Simple program to reseed kernel random number generator using
- * data read from soundcard.
+ * Copyright (C) 2008-2010 Nicholas J. Kain <nicholas aatt kain.us>
  *
- * Copyright 2008-2010 Nicholas Kain <nicholas aatt kain.us>
- * Copyright 2000-2009 by Folkert van Heusden <folkert@vanheusden.com>
- * Copyright 1999 Damien Miller <djm@mindrot.org>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
- * This code is licensed under the GNU Public License version 2
- * Please see the file COPYING for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <math.h>
-#include <getopt.h>
 #include <unistd.h>
-#include <string.h>
-#include <syslog.h>
-#include <signal.h>
+#include <stdlib.h>
+#include <getopt.h>
+#include <stdio.h>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
-#include <sys/time.h>
-
-#include <asm/types.h>
-#include <linux/random.h>
 #include <errno.h>
-
+#include <linux/random.h>
 #include <sys/capability.h>
+#include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <grp.h>
-
-#include <pwd.h>
 
 #include "defines.h"
 #include "log.h"
@@ -58,6 +51,7 @@ static char *chroot_path;
 
 static void main_loop(int random_fd, int max_bits);
 static void usage(void);
+static void copyright();
 
 static void get_random_data(int process_samples);
 static int random_max_bits(int random_fd);
@@ -65,38 +59,26 @@ static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits);
 static void drop_privs(int uid, int gid);
 
-static int parse_user(char *username, int *gid)
+static void exit_cleanup(int signum)
 {
-    int t;
-    char *p;
-    struct passwd *pws;
-
-    t = (unsigned int) strtol(username, &p, 10);
-    if (*p != '\0') {
-        pws = getpwnam(username);
-        if (pws) {
-            t = (int)pws->pw_uid;
-            if (*gid < 1)
-                *gid = (int)pws->pw_gid;
-        } else suicide("FATAL - Invalid uid specified.\n");
+    if (munlockall() == -1)
+        suicide("problem unlocking pages");
+    unlink(pidfile_path);
+    sound_close();
+    log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
     }
-    return t;
+    exit(0);
 }
 
-static int parse_group(char *groupname)
+static void sighandler(int signum)
 {
-    int t;
-    char *p;
-    struct group *grp;
-
-    t = (unsigned int) strtol(groupname, &p, 10);
-    if (*p != '\0') {
-        grp = getgrnam(groupname);
-        if (grp) {
-            t = (int)grp->gr_gid;
-        } else suicide("FATAL - Invalid gid specified.\n");
+    switch (signum) {
+        case SIGHUP: case SIGINT: case SIGTERM: exit_cleanup(signum); break;
+        case SIGUSR1: gflags_debug = 1; break;
+        case SIGUSR2: gflags_debug = 0; break;
     }
-    return t;
 }
 
 int main(int argc, char **argv)
@@ -179,23 +161,20 @@ int main(int argc, char **argv)
                 break;
 
             case 'h':
-                usage();
-                exit(0);
-
             case '?':
             default:
-                log_line(LOG_NOTICE, "fatal: invalid command line options");
-            usage();
-            exit(1);
+                copyright();
+                usage();
+                exit(1);
         }
     }
 
     signal(SIGPIPE, SIG_IGN);
-    signal(SIGHUP, gracefully_exit);
-    signal(SIGINT, gracefully_exit);
-    signal(SIGTERM, gracefully_exit);
-    signal(SIGUSR1, logging_handler);
-    signal(SIGUSR2, logging_handler);
+    signal(SIGHUP, sighandler);
+    signal(SIGINT, sighandler);
+    signal(SIGTERM, sighandler);
+    signal(SIGUSR1, sighandler);
+    signal(SIGUSR2, sighandler);
 
     log_line(LOG_NOTICE, "snd-egd starting up");
 
@@ -402,20 +381,36 @@ static void get_random_data(int target)
 
 static void usage(void)
 {
-    log_line(LOG_NOTICE, "Usage: snd-egd [options]\n");
-    log_line(LOG_NOTICE, "Collect entropy from a soundcard and feed it into the kernel random pool.");
-    log_line(LOG_NOTICE, "Options:");
-    log_line(LOG_NOTICE, "--device,       -d []  Specify sound device to use. (Default %s)", DEFAULT_HW_DEVICE);
-    log_line(LOG_NOTICE, "--item,         -i []  Specify item on the device that we sample from. (Default %s)", DEFAULT_HW_ITEM);
-    log_line(LOG_NOTICE, "--max-bit       -b []  Maximum significance of a bit that will be used in a sample. (Default %d)", DEFAULT_MAX_BIT);
-    log_line(LOG_NOTICE, "--sample-rate,  -r []  Audio sampling rate. (default %i)", DEFAULT_SAMPLE_RATE);
-    log_line(LOG_NOTICE, "--skip-bytes,   -s []  Ignore the first N audio bytes after opening device. (default %i)", DEFAULT_SKIP_BYTES);
-    log_line(LOG_NOTICE, "--pid-file,     -p []  Path where the PID file will be created. (default %s)", DEFAULT_PID_FILE);
-    log_line(LOG_NOTICE, "--user          -u []  User name or id to change to after dropping privileges.");
-    log_line(LOG_NOTICE, "--group         -g []  Group name or id to change to after dropping privileges.");
-    log_line(LOG_NOTICE, "--chroot        -c []  Directory to use as the chroot jail.");
-    log_line(LOG_NOTICE, "--do-not-fork   -n     Do not fork.");
-    log_line(LOG_NOTICE, "--verbose,      -v     Be verbose.");
-    log_line(LOG_NOTICE, "--help,         -h     This help.");
+    printf("Collect entropy from a sound card and feed it into the kernel random pool.\n");
+    printf("Usage: snd-egd [options]\n\n");
+    printf("--device,       -d []  Sound device used (default %s)\n", DEFAULT_HW_DEVICE);
+    printf("--item,         -i []  Sound device item used (default %s)\n", DEFAULT_HW_ITEM);
+    printf("--max-bit       -b []  Maximum significance used in samples. (default %d)\n", DEFAULT_MAX_BIT);
+    printf("--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
+    printf("--skip-bytes,   -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
+    printf("--pid-file,     -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
+    printf("--user          -u []  User name or id to change to after dropping privileges.\n");
+    printf("--group         -g []  Group name or id to change to after dropping privileges.\n");
+    printf("--chroot        -c []  Directory to use as the chroot jail.\n");
+    printf("--do-not-fork   -n     Do not fork.\n");
+    printf("--verbose,      -v     Be verbose.\n");
+    printf("--help,         -h     This help.\n");
 }
 
+static void copyright()
+{
+    printf(
+        "snd-egd %s Copyright (C) 2008-2010 Nicholas J. Kain\n"
+        "This program is free software: you can redistribute it and/or modify\n"
+        "it under the terms of the GNU General Public License as published by\n"
+        "the Free Software Foundation, either version 3 of the License, or\n"
+        "(at your option) any later version.\n\n", SNDEGD_VERSION);
+    printf(
+        "This program is distributed in the hope that it will be useful,\n"
+        "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+        "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+        "GNU General Public License for more details.\n\n"
+
+        "You should have received a copy of the GNU General Public License\n"
+        "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n");
+}

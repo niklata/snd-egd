@@ -6,6 +6,8 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <grp.h>
+#include <pwd.h>
 
 #include "log.h"
 #include "rb.h"
@@ -14,6 +16,40 @@
 
 char *pidfile_path = DEFAULT_PID_FILE;
 extern ring_buffer_t *rb;
+
+int parse_user(char *username, int *gid)
+{
+    int t;
+    char *p;
+    struct passwd *pws;
+
+    t = (unsigned int) strtol(username, &p, 10);
+    if (*p != '\0') {
+        pws = getpwnam(username);
+        if (pws) {
+            t = (int)pws->pw_uid;
+            if (*gid < 1)
+                *gid = (int)pws->pw_gid;
+        } else suicide("FATAL - Invalid uid specified.\n");
+    }
+    return t;
+}
+
+int parse_group(char *groupname)
+{
+    int t;
+    char *p;
+    struct group *grp;
+
+    t = (unsigned int) strtol(groupname, &p, 10);
+    if (*p != '\0') {
+        grp = getgrnam(groupname);
+        if (grp) {
+            t = (int)grp->gr_gid;
+        } else suicide("FATAL - Invalid gid specified.\n");
+    }
+    return t;
+}
 
 void write_pidfile(void)
 {
@@ -31,39 +67,5 @@ void daemonize(void)
         suicide("fork failed");
 
     write_pidfile();
-}
-
-extern unsigned int stats[2][256];
-
-void gracefully_exit(int signum)
-{
-    if (munlockall() == -1)
-        suicide("problem unlocking pages");
-    unlink(pidfile_path);
-    sound_close();
-    log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
-    for (int i = 0; i < 256; ++i) {
-        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
-    }
-    exit(0);
-}
-
-void logging_handler(int signum)
-{
-    if (signum == SIGUSR1)
-        gflags_debug = 1;
-
-    if (signum == SIGUSR2)
-        gflags_debug = 0;
-}
-
-void *xmalloc(size_t size)
-{
-    void *ret;
-
-    ret = malloc(size);
-    if (!ret)
-        suicide("FATAL - malloc() failed");
-    return ret;
 }
 

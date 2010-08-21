@@ -1,6 +1,8 @@
 #ifndef NJK_DEFINES_H_
 #define NJK_DEFINES_H_ 1
 
+#define SNDEGD_VERSION "1.0"
+
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
 
