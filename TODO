@@ -1,7 +1,5 @@
-- Rewrite the stuff I haven't already rewritten, so I can license under
-  GPLv3.
 - Support poll()
 - Support /dev/dsp
-- Use autoconf to select ALSA/OSS, little/big endian, and VN/AMLS.
+- Use autoconf to select ALSA/OSS, little/big endian.
 - Manual page
 
