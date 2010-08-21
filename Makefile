@@ -2,7 +2,7 @@ VERSION = 1.0
 OPT_FLAGS = -std=gnu99
 WARNFLAGS = -Wall -pedantic
 CFLAGS += $(WARNFLAGS) $(OPT_FLAGS)
-LFLAGS = -lm -lasound
+LFLAGS = -lm -lasound -lcap
 
 TARGETS = snd-egd
 

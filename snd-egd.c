@@ -31,6 +31,11 @@
 #include <linux/random.h>
 #include <errno.h>
 
+#include <sys/capability.h>
+#include <sys/prctl.h>
+#include <grp.h>
+
+
 #include "defines.h"
 #include "log.h"
 #include "util.h"
@@ -42,15 +47,17 @@ ring_buffer_t *rb;
 
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 
-static void main_loop(void);
+static void main_loop(int random_fd, int max_bits);
 static void usage(void);
 static int vn_renorm_buf(char *buf8, size_t buf8size);
 static void get_random_data(int process_samples);
+static int random_max_bits(int random_fd);
 static unsigned int ioc_rndaddentropy(int handle, int wanted_bits);
+static void drop_privs(int uid, int gid);
 
 int main(int argc, char **argv)
 {
-    int c;
+    int c, random_fd = -1, uid = -1, gid = -1;
     struct option long_options[] = {
             {"device",  1, NULL, 'd' },
             {"port", 1, NULL, 'i' },
@@ -59,6 +66,8 @@ int main(int argc, char **argv)
             {"sample-rate", 1, NULL, 'r' },
             {"skip-bytes", 1, NULL, 's' },
             {"pid-file", 1, NULL, 'p' },
+            {"uid", 1, NULL, 'u'},
+            {"gid", 1, NULL, 'g'},
             {"verbose", 0, NULL, 'v' },
             {"help",    0, NULL, 'h' },
             {NULL,      0, NULL, 0   }
@@ -68,7 +77,8 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long (argc, argv, "i:d:b:nr:s:p:vh", long_options, NULL);
+        c = getopt_long (argc, argv, "i:d:b:nr:s:p:u:g:vh",
+                         long_options, NULL);
         if (c == -1)
             break;
 
@@ -107,6 +117,14 @@ int main(int argc, char **argv)
                 pidfile_path = strdup(optarg);
                 break;
 
+            case 'u':
+                uid = atoi(optarg);
+                break;
+
+            case 'g':
+                gid = atoi(optarg);
+                break;
+
             case 'v':
                 gflags_debug = 1;
                 break;
@@ -132,15 +150,42 @@ int main(int argc, char **argv)
 
     log_line(LOG_NOTICE, "snd-egd starting up");
 
+    /* Open kernel random device */
+    random_fd = open(RANDOM_DEVICE, O_RDWR);
+    if (random_fd == -1)
+        suicide("Couldn't open random device: %m");
+
+    /* Find out the kernel entropy pool size */
+    int max_bits = random_max_bits(random_fd);
+
     if (mlockall(MCL_FUTURE | MCL_CURRENT) == -1)
         suicide("mlockall failed");
 
     if (gflags_detach)
         daemonize();
 
-    main_loop();
+    if (uid != -1 && gid != -1)
+        drop_privs(uid, gid);
+
+    main_loop(random_fd, max_bits);
 
     exit(0);
+}
+
+static void drop_privs(int uid, int gid)
+{
+    cap_t caps;
+    prctl(PR_SET_KEEPCAPS, 1);
+    caps = cap_from_text("cap_sys_admin=ep");
+    if (!caps)
+        suicide("cap_from_text failed");
+    if (setgroups(0, NULL) == -1)
+        suicide("setgroups failed");
+    if (setegid(18) == -1 || seteuid(130) == -1)
+        suicide("dropping privs failed");
+    if (cap_set_proc(caps) == -1)
+        suicide("cap_set_proc failed");
+    cap_free(caps);
 }
 
 static void wait_for_watermark(int random_fd)
@@ -181,20 +226,11 @@ static int random_cur_bits(int random_fd)
     return ret;
 }
 
-static void main_loop()
+static void main_loop(int random_fd, int max_bits)
 {
-    int random_fd = -1, max_bits;
     int i, before, wanted_bits;
 
     rb = rb_new(RB_SIZE);
-
-    /* Open kernel random device */
-    random_fd = open(RANDOM_DEVICE, O_RDWR);
-    if (random_fd == -1)
-        suicide("Couldn't open random device: %m");
-
-    /* Find out the kernel entropy pool size */
-    max_bits = random_max_bits(random_fd);
 
     sound_open();
 
