@@ -51,7 +51,8 @@ static void usage(void);
 static int vn_renorm_buf(char *buf8, size_t buf8size);
 static void get_random_data(int process_samples);
 static int random_max_bits(int random_fd);
-static unsigned int ioc_rndaddentropy(int handle, int wanted_bits);
+static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
+                                      int handle, int wanted_bits);
 static void drop_privs(int uid, int gid);
 
 int main(int argc, char **argv)
@@ -229,7 +230,8 @@ static int random_cur_bits(int random_fd)
 
 static void main_loop(int random_fd, int max_bits)
 {
-    int i, before, wanted_bits;
+    int i, before, wanted_bits, max_bytes;
+    struct rand_pool_info *output;
 
     rb = rb_new(RB_SIZE);
 
@@ -237,6 +239,11 @@ static void main_loop(int random_fd, int max_bits)
 
     /* Prefill entropy buffer */
     get_random_data(rb->size - rb->bytes);
+
+    max_bytes = max_bits / 8;
+    if (max_bits & 7)
+        ++max_bytes;
+    output = xmalloc(sizeof(struct rand_pool_info) + max_bytes);
 
     for(;;) {
         wait_for_watermark(random_fd);
@@ -255,11 +262,12 @@ static void main_loop(int random_fd, int max_bits)
          * a lot of bytes being consumed from the random device.
          */
         for (i = 0; i < wanted_bits;)
-            i += ioc_rndaddentropy(random_fd, wanted_bits - i);
+            i += ioc_rndaddentropy(output, random_fd, wanted_bits - i);
 
         get_random_data(rb->size - rb->bytes);
     }
     sound_close();
+    free(output);
 }
 
 /*
@@ -267,11 +275,11 @@ static void main_loop(int random_fd, int max_bits)
  * arrays.
  * @return number of bits that were loaded to the KRNG
  */
-static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
+static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
+                                      int handle, int wanted_bits)
 {
     unsigned int total_cur_bytes;
     unsigned int wanted_bytes;
-    struct rand_pool_info *output;
 
     wanted_bytes = wanted_bits / 8;
     if (wanted_bits & 7)
@@ -282,18 +290,13 @@ static unsigned int ioc_rndaddentropy(int handle, int wanted_bits)
     if (total_cur_bytes < wanted_bytes)
         wanted_bytes = total_cur_bytes;
 
-    output = (struct rand_pool_info *)xmalloc(sizeof(struct rand_pool_info)
-                                             + wanted_bytes);
-
     output->entropy_count = wanted_bytes * 8;
-    output->buf_size      = wanted_bytes;
+    output->buf_size = wanted_bytes;
     if (rb_move(rb, (char *)output->buf, wanted_bytes) == -1)
         suicide("rb_move() failed");
 
     if (ioctl(handle, RNDADDENTROPY, output) == -1)
         suicide("RNDADDENTROPY failed!");
-
-    free(output);
 
     log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
              wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(rb) * 8);
