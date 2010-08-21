@@ -1,5 +1,5 @@
-#ifndef _NJK_INCLUDE_SOUND_H_
-#define _NJK_INCLUDE_SOUND_H_ 1
+#ifndef NJK_INCLUDE_SOUND_H_
+#define NJK_INCLUDE_SOUND_H_ 1
 
 void sound_open(void);
 void sound_read(char *buf, size_t size);

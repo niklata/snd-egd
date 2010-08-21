@@ -1,5 +1,5 @@
 VERSION = 1.0
-OPT_FLAGS = -Os -std=gnu99
+OPT_FLAGS = -std=gnu99
 WARNFLAGS = -Wall -pedantic
 CFLAGS += $(WARNFLAGS) $(OPT_FLAGS)
 LFLAGS = -lm -lasound

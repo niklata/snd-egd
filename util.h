@@ -1,5 +1,5 @@
-#ifndef __NJK_UTIL_H_
-#define __NJK_UTIL_H_ 1
+#ifndef NJK_UTIL_H_
+#define NJK_UTIL_H_ 1
 
 #include "defines.h"
 

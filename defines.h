@@ -1,5 +1,5 @@
-#ifndef __NJK_DEFINES_H_
-#define __NJK_DEFINES_H_ 1
+#ifndef NJK_DEFINES_H_
+#define NJK_DEFINES_H_ 1
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
