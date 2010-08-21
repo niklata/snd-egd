@@ -34,11 +34,11 @@
 #include <sys/prctl.h>
 #include <grp.h>
 
+#include <pwd.h>
 
 #include "defines.h"
 #include "log.h"
 #include "util.h"
-#include "amls.h"
 #include "sound.h"
 #include "rb.h"
 #include "vn.h"
@@ -62,6 +62,40 @@ static int random_max_bits(int random_fd);
 static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits);
 static void drop_privs(int uid, int gid);
+
+int parse_user(char *username, int *gid)
+{
+    int t;
+    char *p;
+    struct passwd *pws;
+
+    t = (unsigned int) strtol(username, &p, 10);
+    if (*p != '\0') {
+        pws = getpwnam(username);
+        if (pws) {
+            t = (int)pws->pw_uid;
+            if (*gid < 1)
+                *gid = (int)pws->pw_gid;
+        } else suicide("FATAL - Invalid uid specified.\n");
+    }
+    return t;
+}
+
+int parse_group(char *groupname)
+{
+    int t;
+    char *p;
+    struct group *grp;
+
+    t = (unsigned int) strtol(groupname, &p, 10);
+    if (*p != '\0') {
+        grp = getgrnam(groupname);
+        if (grp) {
+            t = (int)grp->gr_gid;
+        } else suicide("FATAL - Invalid gid specified.\n");
+    }
+    return t;
+}
 
 int main(int argc, char **argv)
 {
@@ -126,11 +160,11 @@ int main(int argc, char **argv)
                 break;
 
             case 'u':
-                uid = atoi(optarg);
+                uid = parse_user(optarg, &gid);
                 break;
 
             case 'g':
-                gid = atoi(optarg);
+                gid = parse_group(optarg);
                 break;
 
             case 'v':
