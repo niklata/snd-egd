@@ -79,6 +79,7 @@ void sound_open(void)
         suicide("Could not apply settings to sound device!");
 
     pcm_bytes_per_frame = snd_pcm_frames_to_bytes(pcm_handle, 1);
+    log_line(LOG_DEBUG, "bytes-per-frame: %d", pcm_bytes_per_frame);
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
@@ -92,7 +93,12 @@ void sound_open(void)
     }
 }
 
-void sound_read(char *buf, size_t size)
+int sound_bytes_per_frame(void)
+{
+    return pcm_bytes_per_frame;
+}
+
+int sound_read(void *buf, size_t size)
 {
     snd_pcm_sframes_t fr;
 
@@ -103,6 +109,7 @@ void sound_read(char *buf, size_t size)
     /* Nope, something else is wrong. Bail. */
     if (fr < 0 || (fr == -1 && errno != EINTR))
         suicide("get_random_data(): Read error: %m");
+    return fr;
 }
 
 void sound_start(void)

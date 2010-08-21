@@ -19,6 +19,7 @@
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
 #define RB_SIZE                     4096
+#define POOL_BUFFER_SIZE            4096
 
 #endif
 

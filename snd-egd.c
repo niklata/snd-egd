@@ -42,16 +42,35 @@
 #include "sound.h"
 #include "rb.h"
 
+#define USE_AMLS 1
+
 ring_buffer_t rb;
+
+unsigned int stats[256];
+
+struct pool_buffer_t {
+    struct rand_pool_info info;
+    char buf[POOL_BUFFER_SIZE];
+};
 
 static unsigned char max_bit = DEFAULT_MAX_BIT;
 
 static void main_loop(int random_fd, int max_bits);
 static void usage(void);
-static int vn_renorm_buf(char *buf8, size_t buf8size);
+
+
+typedef struct {
+    int bits_out, topbit, total_out;
+    char prev_bits[16];
+    unsigned char byte_out;
+} vn_renorm_state_t;
+
+static int vn_renorm_buf(uint16_t buf[], size_t bufsize,
+                         vn_renorm_state_t *state);
+
 static void get_random_data(int process_samples);
 static int random_max_bits(int random_fd);
-static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
+static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits);
 static void drop_privs(int uid, int gid);
 
@@ -167,6 +186,8 @@ int main(int argc, char **argv)
     if (uid != -1 && gid != -1)
         drop_privs(uid, gid);
 
+    memset(stats, 0, sizeof stats);
+
     main_loop(random_fd, max_bits);
 
     exit(0);
@@ -230,8 +251,8 @@ static int random_cur_bits(int random_fd)
 
 static void main_loop(int random_fd, int max_bits)
 {
-    int i, before, wanted_bits, max_bytes;
-    struct rand_pool_info *output;
+    int i, before, wanted_bits;
+    struct pool_buffer_t poolbuf;
 
     rb_init(&rb);
 
@@ -239,11 +260,6 @@ static void main_loop(int random_fd, int max_bits)
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
-
-    max_bytes = max_bits / 8;
-    if (max_bits & 7)
-        ++max_bytes;
-    output = xmalloc(sizeof(struct rand_pool_info) + max_bytes);
 
     for(;;) {
         wait_for_watermark(random_fd);
@@ -262,12 +278,11 @@ static void main_loop(int random_fd, int max_bits)
          * a lot of bytes being consumed from the random device.
          */
         for (i = 0; i < wanted_bits;)
-            i += ioc_rndaddentropy(output, random_fd, wanted_bits - i);
+            i += ioc_rndaddentropy(&poolbuf, random_fd, wanted_bits - i);
 
         get_random_data(rb.size - rb.bytes);
     }
     sound_close();
-    free(output);
 }
 
 /*
@@ -275,7 +290,7 @@ static void main_loop(int random_fd, int max_bits)
  * arrays.
  * @return number of bits that were loaded to the KRNG
  */
-static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
+static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits)
 {
     unsigned int total_cur_bytes;
@@ -290,27 +305,22 @@ static unsigned int ioc_rndaddentropy(struct rand_pool_info *output,
     if (total_cur_bytes < wanted_bytes)
         wanted_bytes = total_cur_bytes;
 
-    output->entropy_count = wanted_bytes * 8;
-    output->buf_size = wanted_bytes;
-    if (rb_move(&rb, (char *)output->buf, wanted_bytes) == -1)
+    wanted_bytes = MIN(wanted_bytes, POOL_BUFFER_SIZE);
+    poolbuf->info.entropy_count = wanted_bytes * 8;
+    poolbuf->info.buf_size = wanted_bytes;
+    if (rb_move(&rb, poolbuf->buf, wanted_bytes) == -1)
         suicide("rb_move() failed");
 
-    if (ioctl(handle, RNDADDENTROPY, output) == -1)
+    if (ioctl(handle, RNDADDENTROPY, poolbuf) == -1)
         suicide("RNDADDENTROPY failed!");
 
     log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
-             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
+             wanted_bits, total_cur_bytes * 8, wanted_bytes / 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
 }
 
-typedef struct {
-    int bits_out, topbit, total_out;
-    char prev_bits[16];
-    unsigned char byte_out;
-} vn_renorm_state_t;
-
-static void vn_renorm_init(vn_renorm_state_t *state, int topbit)
+static void vn_renorm_init(vn_renorm_state_t *state)
 {
     int j;
 
@@ -319,19 +329,20 @@ static void vn_renorm_init(vn_renorm_state_t *state, int topbit)
     state->bits_out = 0;
     state->byte_out = 0;
     state->total_out = 0;
-    state->topbit = topbit;
+    state->topbit = MIN(max_bit, 16);
     for (j = 0; j < 16; ++j)
         state->prev_bits[j] = -1;
 }
 
-static int vn_renorm(vn_renorm_state_t *state, int i)
+static int vn_renorm(vn_renorm_state_t *state, uint16_t i)
 {
-    int j, new = -1;
+    unsigned int j, new;
 
     /* process bits */
     for (j = 0; j < state->topbit; ++j) {
         /* Select the bit of given significance. */
-        new = (i >> j) & 1;
+        new = (i >> j) & 0x01;
+        /* log_line(LOG_DEBUG, "j=%d, prev_bits[j]=%d, new=%d", j, state->prev_bits[j], new); */
 
         /* We've not yet collected two bits; move on. */
         if (state->prev_bits[j] == -1) {
@@ -355,6 +366,7 @@ static int vn_renorm(vn_renorm_state_t *state, int i)
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
         if (state->bits_out == 8) {
+            stats[state->byte_out] += 1;
             state->total_out += rb_store_byte_xor(&rb, state->byte_out);
 
             state->bits_out = 0;
@@ -366,6 +378,41 @@ static int vn_renorm(vn_renorm_state_t *state, int i)
     }
     return 0;
 }
+
+/* static int vn_renorm_2(unsigned char buf[], size_t size) */
+/* { */
+/*     int i, j; */
+/*     int bit, prev_bit = -1, bits_out = 0, total_out = 0; */
+/*     unsigned char byte_out = 0; */
+
+/*     for (i = 0; i < size; ++i) { */
+/*         bit = buf[i] & 0x01; */
+/*         if (prev_bit != -1) { */
+/*             if (prev_bit == bit) { */
+/*                 prev_bit = -1; */
+/*                 continue; */
+/*             } */
+/*             if (prev_bit == 1) */
+/*                 byte_out |= 1 << bits_out; */
+/*             bits_out++; */
+/*             prev_bit = -1; */
+
+/*             if (bits_out == 8) { */
+/*                 stats[byte_out] += 1; */
+/*                 total_out += rb_store_byte_xor(&rb, byte_out); */
+
+/*                 bits_out = 0; */
+/*                 byte_out = 0; */
+
+/*                 if (rb_is_full(&rb)) */
+/*                     return 1; */
+/*             } */
+/*         } else { */
+/*             prev_bit = bit; */
+/*         } */
+/*     } */
+/*     return total_out; */
+/* } */
 
 /*
  * We assume that the chance of a given bit in a sample being a 0 or 1 is not
@@ -379,54 +426,43 @@ static int vn_renorm(vn_renorm_state_t *state, int i)
  *
  * @return number of bytes that were added to the entropy buffer
  */
-static int vn_renorm_buf(char *buf8, size_t buf8size)
+static int vn_renorm_buf(uint16_t buf[], size_t bufsize,
+                         vn_renorm_state_t *state)
 {
-    int16_t *buf = (int16_t *)buf8;
-    size_t i, bufsize = buf8size / 2;
-    int topbit;
-    vn_renorm_state_t state_L, state_R;
+    size_t i;
 
     if (!buf || !bufsize)
-        suicide("vn_renorm_buf received a NULL arg");
-
-    topbit = MIN(max_bit, 16);
-    vn_renorm_init(&state_L, topbit);
-    vn_renorm_init(&state_R, topbit);
+        return 0;
 
 #ifdef HOST_ENDIAN_BE
     if (sound_is_le()) {
 #else
     if (sound_is_be()) {
 #endif
-        for (i = 0; i < (bufsize / 2); ++i) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
+        for (i = 0; i < bufsize; ++i)
+            buf[i] = endian_swap16(buf[i]);
     }
 
     /* Step through each 16-bit sample in the buffer one at a time. */
-    for (i = 0; i < (bufsize / 2); ++i) {
-        if (vn_renorm(&state_L, buf[2*i]))
-            break;
-        if (vn_renorm(&state_R, buf[2*i+1]))
-            break;
+    for (i = 0; i < bufsize; ++i) {
+        vn_renorm(state, buf[i]);
     }
-    return state_L.total_out + state_R.total_out;
+    return state->total_out;
+    /* return vn_renorm_2(buf, bufsize); */
 }
 
 #ifdef USE_AMLS
-static size_t amls_renorm_buf(char *buf8, size_t buf8size)
+static size_t amls_renorm_buf(uint16_t buf[], size_t bufsize)
 {
-    int16_t *buf = (int16_t *)buf8;
     char *in, *out, *outp;
     size_t i, j;
-    size_t bufsize = buf8size / 2, insize = 0, amls_out = 0, total_out = 0;
+    size_t insize = 0, amls_out = 0, total_out = 0;
     int topbit, bits_out = 0;
     char prev = -1;
     unsigned char byte_out = 0;
 
     if (!buf || !bufsize)
-        suicide("amls_renorm_buf received a NULL arg");
+        return 0;
 
     topbit = MIN(max_bit, 16);
 
@@ -437,16 +473,13 @@ static size_t amls_renorm_buf(char *buf8, size_t buf8size)
 #else
     if (sound_is_be()) {
 #endif
-        for (i = 0; i < (bufsize / 2); ++i) {
-            endian_swap16(buf + 2*i);
-            endian_swap16(buf + 2*i + 1);
-        }
+        for (i = 0; i < bufsize; ++i)
+            buf[i] = endian_swap16(buf[i]);
     }
 
     for (i = 0; i < topbit; ++i) {
-        for (j = 0; j < (bufsize / 2); ++j) {
-            in[insize++] = (buf[2*j] >> i) & 1;
-            in[insize++] = (buf[2*j+1] >> i) & 1;
+        for (j = 0; j < bufsize; ++j) {
+            in[insize++] = (buf[j] >> i) & 1;
         }
     }
 
@@ -457,29 +490,18 @@ static size_t amls_renorm_buf(char *buf8, size_t buf8size)
     amls_out = outp - out;
 
     for (i = 0; i < amls_out; ++i) {
-        if (prev == -1) {
-            prev = out[i];
-            continue;
-        }
-
-        if (prev == out[i]) {
-            prev = -1;
-            continue;
-        }
-
-        if (prev)
-            byte_out |= 1 << bits_out;
+        byte_out |= out[i] << bits_out;
         bits_out++;
-        prev = -1;
 
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
         if (bits_out == 8) {
-            total_out += rb_store_byte_xor(rb, byte_out);
+            stats[byte_out] += 1;
+            total_out += rb_store_byte_xor(&rb, byte_out);
             bits_out = 0;
             byte_out = 0;
 
-            if (rb_is_full(rb))
+            if (rb_is_full(&rb))
                 return total_out;
         }
     }
@@ -490,8 +512,17 @@ static size_t amls_renorm_buf(char *buf8, size_t buf8size)
 /* target = desired bytes of entropy that should be retrieved */
 static void get_random_data(int target)
 {
-    int total_in = 0, total_out = 0;
-    char buf[PAGE_SIZE];
+    union frame_t {
+        uint16_t u16[2];
+        uint32_t u32;
+    };
+    int total_in = 0, total_out = 0, frames = 0, framesize = 0, i;
+    union frame_t buf[PAGE_SIZE / 4];
+    uint16_t leftbuf[PAGE_SIZE / 2], rightbuf[PAGE_SIZE / 2];
+    vn_renorm_state_t leftstate, rightstate;
+
+    vn_renorm_init(&leftstate);
+    vn_renorm_init(&rightstate);
 
     log_line(LOG_DEBUG, "get_random_data(%d)", target);
 
@@ -499,12 +530,24 @@ static void get_random_data(int target)
 
     sound_start();
     while (total_out < target) {
-        sound_read(buf, sizeof buf);
-        total_in += sizeof buf;
+        frames = sound_read(buf, target);
+        framesize = sound_bytes_per_frame();
+        total_in += frames * framesize;
+        log_line(LOG_DEBUG, "total_in = %d, frames = %d", total_in, frames);
+        for (i = 0; i < frames; ++i) {
+            leftbuf[i] = buf[i].u16[0];
+            rightbuf[i] = buf[i].u16[1];
+        }
 #ifdef USE_AMLS
-        total_out += amls_renorm_buf(buf, sizeof buf);
+        if (frames > 0) {
+            total_out += amls_renorm_buf(leftbuf, frames);
+            total_out += amls_renorm_buf(rightbuf, frames);
+        }
 #else
-        total_out += vn_renorm_buf(buf, sizeof buf);
+        if (frames > 0) {
+            total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
+            total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
+        }
 #endif
         log_line(LOG_DEBUG, "total_out = %d", total_out);
     }

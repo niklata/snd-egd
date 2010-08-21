@@ -33,14 +33,18 @@ void daemonize(void)
     write_pidfile();
 }
 
+extern unsigned int stats[256];
+
 void gracefully_exit(int signum)
 {
     if (munlockall() == -1)
         suicide("problem unlocking pages");
     unlink(pidfile_path);
-    rb_delete(rb);
     sound_close();
     log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d", i, stats[i]);
+    }
     exit(0);
 }
 
