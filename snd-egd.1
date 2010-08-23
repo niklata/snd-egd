@@ -19,19 +19,17 @@ microphone or line input connector on a sound card with sufficiently high gain
 will generate thermal noise.
 
 The input data is not merely fed into the KRNG without any transformations;
-whitening of the input data is first performed.
+whitening of the input data is first performed.  The whitening method is simple
+and relatively fast.
 
-The whitening method is simple and relatively fast.  A configurable number of
-bits with preference towards the least significant bits are sampled from both
-the left and right input channels.  Each bit from each channel is treated as a
-unique bitstream, and each channel is handled separately in sequence.  For each
-input bitstream, von Neumann's method for normalizing the output of an unfair
-coin is performed, in order to remove any bias that may exist in the source
-signal (and sound card / ADC).  The output from each bitstream is interleaved
-together in a first-encountered, first-output manner to form the output data
-that is fed to the KRNG.  This approach is intentional, as it improves
-diffusion and makes it difficult to determine the source bitstream of any given
-output bit.
+A configurable number of frames is sampled from both the left and right input
+channels.  The stream of input frames is transformed into the absolute value of
+its derivative.  This process effectively discards one frame.
+
+Each bit from the frame is treated as a unique bitstream, and each channel is
+handled separately in sequence.  For each input bitstream, von Neumann's method
+for normalizing the output of an unfair coin is performed, in order to remove
+any bias that may exist in the source signal (and sound card / ADC).
 
 This whitening method should be fine assuming that the change in probability of
 a 1 or 0 bit for any given input bitstream is continuous with respect to time.
@@ -44,12 +42,11 @@ bitstreams.  This will be mostly dependent on having proper mixer settings.
 It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~23KB/s of
 random data with the current approach.
 
-This approach sacrifices a lot of speed compared to direct sampling of
-soundcard data (with von Neumann's method, and all input bits used, throughput
-will be reduced to no faster than 50% of the unprocessed speed; 12% is more
-typical), but should provide better output data that populates the entire range
-of possible bytes.  These values are upper bounds; in practice, the throughput
-loss from normalization will be much greater.
+This approach discards a lot of data compared to direct sampling of sound card
+output; it is typical to see around 88% of all sound card output discarded in
+my own tests, but whitening should provide better output data that populates
+the entire range of possible bytes regardless of the dynamic range of the
+input data.
 
 For higher performance, the amount of data sampled from the sound card varies
 dynamically to keep a static ring buffer of entropy filled with minimum waste.
