@@ -368,7 +368,7 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
         suicide("RNDADDENTROPY failed!");
 
     log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
-             wanted_bits, total_cur_bytes * 8, wanted_bytes / 8, rb_num_bytes(&rb) * 8);
+             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
 }
