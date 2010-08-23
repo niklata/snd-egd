@@ -11,27 +11,30 @@ whitening of the input data is first performed.
 The whitening method is simple and relatively fast.  A configurable number of
 bits (preference towards the least significant bits) are sampled from both the
 left and right input channels.  Each bit from each channel is treated as a
-unique bitstream.  For each input bitstream, von Neumann's method for
-normalizing the output of an unfair coin is performed, in order to remove any
-bias that may exist in the source signal (and sound card / ADC).  The output
-from each bitstream is interleaved together in a first-encountered,
-first-output manner to form the output data that is fed to the KRNG.  This
-approach is intentional, as it improves diffusion and makes it difficult to
-determine the source bitstream of any given output bit.
+unique bitstream, and each channel is handled in sequence -- they are not
+interleaved.  For each input bitstream, von Neumann's method for normalizing
+the output of an unfair coin is performed, in order to remove any bias that may
+exist in the source signal (and sound card / ADC).  The output from each
+bitstream is interleaved together in a first-encountered, first-output manner
+to form the output data that is fed to the KRNG.  This approach is intentional,
+as it improves diffusion and makes it difficult to determine the source
+bitstream of any given output bit.
 
 I once implemented another, more complex scheme called AMLS (Advanced
 Multi-Level System), but it was far slower and took more space.  It may be a
 win for a data source that generates entropy much more slowly than a sound
 card, but a sound card has no need to spare every possible bit.
 
-Using either of these methods should be fine assuming that the change in
-probability of a 1 or 0 bit for any given input bitstream is continuous with
-respect to time.  This is ensured by using the absolute difference in value
-between samples per channel.  Since temperature is probably the largest
-influence in real world situations, this assumption should be fine.
+This whitening method should be fine assuming that the change in probability of
+a 1 or 0 bit for any given input bitstream is continuous with respect to time.
+This is ensured by using the absolute difference in value between samples per
+channel.  Since temperature is probably the largest influence in real world
+situations, this assumption should be fine.
 
 Speed of random number generation is dependent on having well-distributed input
 bitstreams.  This will be mostly dependent on having proper mixer settings.
+It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~57KB/s of
+random data with the current approach.
 
 This approach will sacrifice a lot of speed compared to direct sampling of
 soundcard data (with von Neumann's method, and all input bits used, throughput
@@ -45,6 +48,9 @@ dynamically to keep a static ring buffer of entropy filled with minimum waste.
 
 Entropy quality is not checked, since it is only possible to discard obviously
 non-normalized inputs, and normalization is performed by default.  Entropy
-quality will be dependent on the source of the input signal.
+quality will be dependent on the source of the input signal.  Frequency
+statistics of each possible byte of output are kept, and are useful for
+ensuring that the output is not insane -- it should be well-dispersed if
+the input is indeed random.
 
 - Nicholas Kain ( njk aaaaaaat kain dot us )
