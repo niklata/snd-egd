@@ -38,8 +38,6 @@
 
 ring_buffer_t rb;
 
-unsigned int stats[2][256];
-
 struct pool_buffer_t {
     struct rand_pool_info info;
     char buf[POOL_BUFFER_SIZE];
@@ -65,18 +63,28 @@ static void exit_cleanup(int signum)
     unlink(pidfile_path);
     sound_close();
     log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
-    for (int i = 0; i < 256; ++i) {
-        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
-    }
+    print_random_stats();
     exit(0);
 }
 
 static void sighandler(int signum)
 {
+    int t;
     switch (signum) {
-        case SIGHUP: case SIGINT: case SIGTERM: exit_cleanup(signum); break;
-        case SIGUSR1: gflags_debug = 1; break;
-        case SIGUSR2: gflags_debug = 0; break;
+        case SIGHUP:
+        case SIGINT:
+        case SIGTERM:
+            exit_cleanup(signum);
+            break;
+        case SIGUSR1:
+            t = gflags_debug;
+            gflags_debug = 1;
+            print_random_stats();
+            gflags_debug = t;
+            break;
+        case SIGUSR2:
+            gflags_debug = !gflags_debug;
+            break;
     }
 }
 
@@ -200,7 +208,6 @@ int main(int argc, char **argv)
     if (uid != -1 && gid != -1)
         drop_privs(uid, gid);
 
-    memset(stats, 0, sizeof stats);
     if (mlockall(MCL_FUTURE))
         suicide("mlockall failed");
 

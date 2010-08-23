@@ -24,12 +24,20 @@
 #include "util.h"
 
 extern ring_buffer_t rb;
-extern unsigned int stats[2][256];
 extern unsigned char max_bit;
 
 /* Global for speed... */
 static union frame_t vnbuf[PAGE_SIZE / sizeof(union frame_t)];
 static vn_renorm_state_t vnstate[2];
+static unsigned int stats[2][256];
+
+void print_random_stats(void)
+{
+    log_line(LOG_DEBUG, "sampled random character counts:");
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
+    }
+}
 
 static void vn_renorm_init(void)
 {

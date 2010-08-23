@@ -35,6 +35,7 @@ typedef struct {
     unsigned char byte_out;
 } vn_renorm_state_t;
 
+void print_random_stats(void);
 void get_random_data(int target);
 
 #endif /* GETRANDOM_H_ */
