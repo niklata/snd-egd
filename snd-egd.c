@@ -49,7 +49,7 @@ static char *chroot_path;
 
 static void main_loop(int random_fd, int max_bits);
 static void usage(void);
-static void copyright();
+static void copyright(void);
 
 static int random_max_bits(int random_fd);
 static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
@@ -247,6 +247,18 @@ static void wait_for_watermark(int random_fd)
             break;
     }
 }
+
+static void epoll_init(int random_fd)
+{
+    epollfd = epoll_create(1);
+    if (epollfd == -1)
+        suicide("epoll_create failed");
+
+    ev.events = EPOLLOUT;
+    ev.data.fd = random_fd;
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, random_fd, &ev) == -1)
+        suicide("epoll_ctl failed");
+}
 #else
 static void wait_for_watermark(int random_fd)
 {
@@ -262,6 +274,8 @@ static void wait_for_watermark(int random_fd)
             suicide("Select error: %m");
     }
 }
+
+static void epoll_init(int random_fd) {}
 #endif
 
 static int random_max_bits(int random_fd)
@@ -295,17 +309,7 @@ static void main_loop(int random_fd, int max_bits)
     struct pool_buffer_t poolbuf;
 
     rb_init(&rb);
-
-#ifdef USE_EPOLL
-    epollfd = epoll_create(1);
-    if (epollfd == -1)
-        suicide("epoll_create failed");
-
-    ev.events = EPOLLOUT;
-    ev.data.fd = random_fd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, random_fd, &ev) == -1)
-        suicide("epoll_ctl failed");
-#endif
+    epoll_init(random_fd);
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
@@ -388,7 +392,7 @@ static void usage(void)
     printf("--help,         -h     This help.\n");
 }
 
-static void copyright()
+static void copyright(void)
 {
     printf(
         "snd-egd %s Copyright (C) 2008-2010 Nicholas J. Kain\n"
