@@ -10,6 +10,7 @@ all: $(TARGETS)
 
 snd-egd: getrandom.o util.o log.o rb.o alsa.o snd-egd.o
 	$(CC) -o $@ $^ $(LFLAGS)
+	strip snd-egd
 
 install: snd-egd
 	cp snd-egd /usr/local/sbin/
