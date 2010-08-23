@@ -19,7 +19,7 @@
 
 #include "rb.h"
 #include "sound.h"
-#include "vn.h"
+#include "getrandom.h"
 #include "log.h"
 #include "util.h"
 

@@ -1,5 +1,5 @@
-#ifndef VN_H_
-#define VN_H_
+#ifndef GETRANDOM_H_
+#define GETRANDOM_H_
 
 /*
  * Copyright (C) 2008-2010 Nicholas J. Kain <nicholas aatt kain.us>
@@ -37,4 +37,4 @@ typedef struct {
 
 void get_random_data(int target);
 
-#endif /* VN_H_ */
+#endif /* GETRANDOM_H_ */

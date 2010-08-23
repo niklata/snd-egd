@@ -34,7 +34,7 @@
 #include "util.h"
 #include "sound.h"
 #include "rb.h"
-#include "vn.h"
+#include "getrandom.h"
 
 ring_buffer_t rb;
 
