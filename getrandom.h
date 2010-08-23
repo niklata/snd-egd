@@ -30,9 +30,10 @@ union frame_t {
 };
 
 typedef struct {
-    int bits_out, topbit, total_out;
+    int topbit, total_out;
+    int bits_out[16];
     char prev_bits[16];
-    unsigned char byte_out;
+    unsigned char byte_out[16];
 } vn_renorm_state_t;
 
 void print_random_stats(void);

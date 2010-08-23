@@ -29,13 +29,24 @@ extern unsigned char max_bit;
 /* Global for speed... */
 static union frame_t vnbuf[PAGE_SIZE / sizeof(union frame_t)];
 static vn_renorm_state_t vnstate[2];
-static unsigned int stats[2][256];
+static unsigned int stats[2][16][256];
 
 void print_random_stats(void)
 {
     log_line(LOG_DEBUG, "sampled random character counts:");
+    for (int j = 0; j < 16; ++j) {
+        for (int i = 0; i < 256; ++i) {
+            log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][j][i], stats[1][j][i]);
+        }
+    }
+    log_line(LOG_DEBUG, "total random character counts:");
     for (int i = 0; i < 256; ++i) {
-        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][i], stats[1][i]);
+        int outl = 0, outr = 0;
+        for (int j = 0; j < 16; ++j) {
+            outl += stats[0][j][i];
+            outr += stats[1][j][i];
+        }
+        log_line(LOG_DEBUG, "%i:\t %d\t %d", i, outl, outr);
     }
 }
 
@@ -44,12 +55,13 @@ static void vn_renorm_init(void)
     int i, j;
 
     for (i = 0; i < 2; ++i) {
-        vnstate[i].bits_out = 0;
-        vnstate[i].byte_out = 0;
         vnstate[i].total_out = 0;
         vnstate[i].topbit = MIN(max_bit, 16);
-        for (j = 0; j < 16; ++j)
+        for (j = 0; j < 16; ++j) {
+            vnstate[i].bits_out[j] = 0;
+            vnstate[i].byte_out[j] = 0;
             vnstate[i].prev_bits[j] = -1;
+        }
     }
 }
 
@@ -104,19 +116,19 @@ static int vn_renorm(uint16_t i, size_t channel)
         /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
          * is already marked as 0. */
         if (vnstate[channel].prev_bits[j])
-            vnstate[channel].byte_out |= 1 << vnstate[channel].bits_out;
-        vnstate[channel].bits_out++;
+            vnstate[channel].byte_out[j] |= 1 << vnstate[channel].bits_out[j];
+        vnstate[channel].bits_out[j]++;
         vnstate[channel].prev_bits[j] = -1;
 
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
-        if (vnstate[channel].bits_out == 8) {
-            stats[channel][vnstate[channel].byte_out] += 1;
+        if (vnstate[channel].bits_out[j] == 8) {
+            stats[channel][j][vnstate[channel].byte_out[j]] += 1;
             vnstate[channel].total_out +=
-                rb_store_byte_xor(&rb, vnstate[channel].byte_out);
+                rb_store_byte_xor(&rb, vnstate[channel].byte_out[j]);
 
-            vnstate[channel].bits_out = 0;
-            vnstate[channel].byte_out = 0;
+            vnstate[channel].bits_out[j] = 0;
+            vnstate[channel].byte_out[j] = 0;
 
             if (rb_is_full(&rb))
                 return 1;
