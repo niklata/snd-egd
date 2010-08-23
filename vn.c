@@ -15,73 +15,49 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdlib.h>
+
 #include "rb.h"
 #include "sound.h"
 #include "vn.h"
+#include "log.h"
 #include "util.h"
 
 extern ring_buffer_t rb;
 extern unsigned int stats[2][256];
 extern unsigned char max_bit;
 
-void vn_renorm_init(vn_renorm_state_t *state)
-{
-    int j;
+/* Global for speed... */
+static union frame_t vnbuf[PAGE_SIZE / sizeof(union frame_t)];
+static vn_renorm_state_t vnstate[2];
 
-    if (!state)
-        return;
-    state->bits_out = 0;
-    state->byte_out = 0;
-    state->total_out = 0;
-    state->stats = 0;
-    state->topbit = MIN(max_bit, 16);
-    for (j = 0; j < 16; ++j)
-        state->prev_bits[j] = -1;
+static void vn_renorm_init(void)
+{
+    int i, j;
+
+    for (i = 0; i < 2; ++i) {
+        vnstate[i].bits_out = 0;
+        vnstate[i].byte_out = 0;
+        vnstate[i].total_out = 0;
+        vnstate[i].topbit = MIN(max_bit, 16);
+        for (j = 0; j < 16; ++j)
+            vnstate[i].prev_bits[j] = -1;
+    }
 }
 
-static int vn_renorm(vn_renorm_state_t *state, uint16_t i)
+static size_t buf_to_deltabuf(size_t frames)
 {
-    unsigned int j, new;
+    int i;
 
-    /* process bits */
-    for (j = 0; j < state->topbit; ++j) {
-        /* Select the bit of given significance. */
-        new = (i >> j) & 0x01;
-        /* log_line(LOG_DEBUG, "j=%d, prev_bits[j]=%d, new=%d", j, state->prev_bits[j], new); */
+    if (frames < 2)
+        return 0;
 
-        /* We've not yet collected two bits; move on. */
-        if (state->prev_bits[j] == -1) {
-            state->prev_bits[j] = new;
-            continue;
-        }
-
-        /* If the bits are equal, discard both. */
-        if (state->prev_bits[j] == new) {
-            state->prev_bits[j] = -1;
-            continue;
-        }
-
-        /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
-         * is already marked as 0. */
-        if (state->prev_bits[j])
-            state->byte_out |= 1 << state->bits_out;
-        state->bits_out++;
-        state->prev_bits[j] = -1;
-
-        /* See if we've collected an entire byte.  If so, then copy
-         * it into the output buffer. */
-        if (state->bits_out == 8) {
-            stats[state->stats][state->byte_out] += 1;
-            state->total_out += rb_store_byte_xor(&rb, state->byte_out);
-
-            state->bits_out = 0;
-            state->byte_out = 0;
-
-            if (rb_is_full(&rb))
-                return 1;
-        }
+    for (i = 0; i < frames - 1; ++i) {
+        vnbuf[i].channel[0] = abs(vnbuf[i+1].channel[0] - vnbuf[i].channel[0]);
+        vnbuf[i].channel[1] = abs(vnbuf[i+1].channel[1] - vnbuf[i].channel[1]);
     }
-    return 0;
+
+    return frames - 1;
 }
 
 /*
@@ -96,24 +72,82 @@ static int vn_renorm(vn_renorm_state_t *state, uint16_t i)
  *
  * @return number of bytes that were added to the entropy buffer
  */
-int vn_renorm_buf(uint16_t buf[], size_t bufsize, vn_renorm_state_t *state)
+static int vn_renorm(uint16_t i, size_t channel)
 {
-    size_t i;
+    unsigned int j, new;
 
-    if (!buf || !bufsize)
-        return 0;
+    /* process bits */
+    for (j = 0; j < vnstate[channel].topbit; ++j) {
+        /* Select the bit of given significance. */
+        new = (i >> j) & 0x01;
 
-#ifdef HOST_ENDIAN_BE
-    if (sound_is_le()) {
-#else
-    if (sound_is_be()) {
-#endif
-        for (i = 0; i < bufsize; ++i)
-            buf[i] = endian_swap16(buf[i]);
+        /* We've not yet collected two bits; move on. */
+        if (vnstate[channel].prev_bits[j] == -1) {
+            vnstate[channel].prev_bits[j] = new;
+            continue;
+        }
+
+        /* If the bits are equal, discard both. */
+        if (vnstate[channel].prev_bits[j] == new) {
+            vnstate[channel].prev_bits[j] = -1;
+            continue;
+        }
+
+        /* If 10, mark the bit as 1.  Otherwise, it's 01 and the bit
+         * is already marked as 0. */
+        if (vnstate[channel].prev_bits[j])
+            vnstate[channel].byte_out |= 1 << vnstate[channel].bits_out;
+        vnstate[channel].bits_out++;
+        vnstate[channel].prev_bits[j] = -1;
+
+        /* See if we've collected an entire byte.  If so, then copy
+         * it into the output buffer. */
+        if (vnstate[channel].bits_out == 8) {
+            stats[channel][vnstate[channel].byte_out] += 1;
+            vnstate[channel].total_out +=
+                rb_store_byte_xor(&rb, vnstate[channel].byte_out);
+
+            vnstate[channel].bits_out = 0;
+            vnstate[channel].byte_out = 0;
+
+            if (rb_is_full(&rb))
+                return 1;
+        }
     }
+    return 0;
+}
 
-    /* Step through each 16-bit sample in the buffer one at a time. */
-    for (i = 0; i < bufsize; ++i)
-        vn_renorm(state, buf[i]);
-    return state->total_out;
+/* target = desired bytes of entropy that should be retrieved */
+void get_random_data(int target)
+{
+    int total_in = 0, total_out = 0, frames = 0, framesize = 0, i;
+    vn_renorm_init();
+
+    log_line(LOG_DEBUG, "get_random_data(%d)", target);
+
+    target = MIN(sizeof vnbuf, target);
+
+    sound_start();
+    while (total_out < target) {
+        frames = sound_read(vnbuf, target);
+        framesize = sound_bytes_per_frame();
+        log_line(LOG_DEBUG, "frames = %d", frames);
+
+        frames = buf_to_deltabuf(frames);
+
+        for (i = 0; i < frames; ++i) {
+            if (vn_renorm(vnbuf[i].channel[0], 0))
+                break;
+            if (vn_renorm(vnbuf[i].channel[1], 1))
+                break;
+        }
+        /* may be inaccurate by one 16-bit value, not worth the speed hit
+           for precise accounting */
+        total_in += i * framesize;
+        total_out = vnstate[0].total_out + vnstate[1].total_out;
+    }
+    sound_stop();
+
+    log_line(LOG_DEBUG, "get_random_data(): in->out bytes = %d->%d, eff = %f",
+             total_in, total_out, (float)total_out / (float)total_in);
 }

@@ -20,14 +20,21 @@
 
 #include <stdint.h>
 
+/*
+ * Frames are 32-bits in length with 16-bits per channel, and each channel
+ * word stored in sequence.
+ */
+union frame_t {
+    int16_t channel[2];
+    int32_t frame;
+};
+
 typedef struct {
     int bits_out, topbit, total_out;
-    int stats;
     char prev_bits[16];
     unsigned char byte_out;
 } vn_renorm_state_t;
 
-void vn_renorm_init(vn_renorm_state_t *state);
-int vn_renorm_buf(uint16_t buf[], size_t bufsize, vn_renorm_state_t *state);
+void get_random_data(int target);
 
 #endif /* VN_H_ */

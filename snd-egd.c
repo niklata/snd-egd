@@ -53,7 +53,6 @@ static void main_loop(int random_fd, int max_bits);
 static void usage(void);
 static void copyright();
 
-static void get_random_data(int process_samples);
 static int random_max_bits(int random_fd);
 static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
                                       int handle, int wanted_bits);
@@ -335,49 +334,6 @@ static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
     return wanted_bytes * 8;
 }
 
-/* target = desired bytes of entropy that should be retrieved */
-static void get_random_data(int target)
-{
-    union frame_t {
-        int16_t s16[2];
-        int32_t s32;
-    };
-    int total_in = 0, total_out = 0, frames = 0, framesize = 0, i;
-    union frame_t buf[PAGE_SIZE / 4];
-    uint16_t leftbuf[PAGE_SIZE / 2], rightbuf[PAGE_SIZE / 2];
-    vn_renorm_state_t leftstate, rightstate;
-
-    vn_renorm_init(&leftstate);
-    vn_renorm_init(&rightstate);
-
-    log_line(LOG_DEBUG, "get_random_data(%d)", target);
-
-    target = MIN(sizeof buf, target);
-
-    sound_start();
-    while (total_out < target) {
-        frames = sound_read(buf, target);
-        framesize = sound_bytes_per_frame();
-        total_in += frames * framesize;
-        log_line(LOG_DEBUG, "total_in = %d, frames = %d", total_in, frames);
-        for (i = 0; i < frames - 1; ++i) {
-            leftbuf[i] = abs(buf[i+1].s16[0] - buf[i].s16[0]);
-            rightbuf[i] = abs(buf[i+1].s16[1] - buf[i].s16[1]);
-        }
-
-        if (frames > 0) {
-            leftstate.stats = 0;
-            total_out += vn_renorm_buf(leftbuf, frames, &leftstate);
-            rightstate.stats = 1;
-            total_out += vn_renorm_buf(rightbuf, frames, &rightstate);
-        }
-        log_line(LOG_DEBUG, "total_out = %d", total_out);
-    }
-    sound_stop();
-
-    log_line(LOG_DEBUG, "get_random_data(): in->out bytes = %d->%d, eff = %f",
-            total_in, total_out, (float)total_out / (float)total_in);
-}
 
 static void usage(void)
 {
