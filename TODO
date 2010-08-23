@@ -1,5 +1,3 @@
-- Support poll()
-- Support /dev/dsp
-- Use autoconf to select ALSA/OSS, little/big endian.
-- Manual page
+- Support /dev/dsp (OSS)
+- Use autoconf to select ALSA/OSS, little/big endian, epoll(), PAGE_SIZE.
 

@@ -52,8 +52,8 @@ static void usage(void);
 static void copyright();
 
 static int random_max_bits(int random_fd);
-static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
-                                      int handle, int wanted_bits);
+static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
+                                int wanted_bits);
 static void drop_privs(int uid, int gid);
 
 static void exit_cleanup(int signum)
@@ -193,10 +193,10 @@ int main(int argc, char **argv)
     /* Find out the kernel entropy pool size */
     int max_bits = random_max_bits(random_fd);
 
-    sound_open();
-
     if (gflags_detach)
         daemonize();
+
+    sound_open();
 
     if (chroot_path) {
         if (chdir(chroot_path))
@@ -232,6 +232,22 @@ static void drop_privs(int uid, int gid)
     cap_free(caps);
 }
 
+#ifdef USE_EPOLL
+#include <sys/epoll.h>
+static int epollfd;
+static struct epoll_event ev, events[1];
+
+static void wait_for_watermark(int random_fd)
+{
+    for (;;) {
+        int ret = epoll_wait(epollfd, events, 1, -1);
+        if (ret == -1)
+            suicide("epoll_wait failed");
+        if (events[0].data.fd == random_fd)
+            break;
+    }
+}
+#else
 static void wait_for_watermark(int random_fd)
 {
     fd_set write_fd;
@@ -246,6 +262,7 @@ static void wait_for_watermark(int random_fd)
             suicide("Select error: %m");
     }
 }
+#endif
 
 static int random_max_bits(int random_fd)
 {
@@ -279,6 +296,17 @@ static void main_loop(int random_fd, int max_bits)
 
     rb_init(&rb);
 
+#ifdef USE_EPOLL
+    epollfd = epoll_create(1);
+    if (epollfd == -1)
+        suicide("epoll_create failed");
+
+    ev.events = EPOLLOUT;
+    ev.data.fd = random_fd;
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, random_fd, &ev) == -1)
+        suicide("epoll_ctl failed");
+#endif
+
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
 
@@ -299,7 +327,7 @@ static void main_loop(int random_fd, int max_bits)
          * a lot of bytes being consumed from the random device.
          */
         for (i = 0; i < wanted_bits;)
-            i += ioc_rndaddentropy(&poolbuf, random_fd, wanted_bits - i);
+            i += add_entropy(&poolbuf, random_fd, wanted_bits - i);
 
         get_random_data(rb.size - rb.bytes);
     }
@@ -311,8 +339,8 @@ static void main_loop(int random_fd, int max_bits)
  * arrays.
  * @return number of bits that were loaded to the KRNG
  */
-static unsigned int ioc_rndaddentropy(struct pool_buffer_t *poolbuf,
-                                      int handle, int wanted_bits)
+static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
+                                int wanted_bits)
 {
     unsigned int total_cur_bytes;
     unsigned int wanted_bytes;

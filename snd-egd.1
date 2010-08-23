@@ -79,7 +79,7 @@ Specifies the number of bytes of input from the sound card that will be
 ignored after the sound card device is opened.  Many sound cards create
 popping noises or similar when brought back from sleep state, so this
 option allows for those predictable samples to be skipped.  Default
-is 65536 bytes.
+is one second of samples (48000 * 4).
 .TP
 .B \-\^p , \-\-pidfile=FILE
 Specify he file in which the process id of ncron will be stored; the

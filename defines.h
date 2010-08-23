@@ -29,16 +29,18 @@
 
 #define PAGE_SIZE 4096
 
+#define USE_EPOLL 1
+
 #define RANDOM_DEVICE               "/dev/random"
 #define DEFAULT_PID_FILE            "/var/run/snd-egd.pid"
 #define DEFAULT_HW_DEVICE           "hw:0"
 #define DEFAULT_HW_ITEM             "capture"
 #define DEFAULT_SAMPLE_RATE         48000
-#define DEFAULT_SKIP_BYTES          (4096 * 16)
+#define DEFAULT_SKIP_BYTES          (48000 * 4 * 1)
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
-#define RB_SIZE                     4096
-#define POOL_BUFFER_SIZE            4096
+#define RB_SIZE                     PAGE_SIZE
+#define POOL_BUFFER_SIZE            PAGE_SIZE
 
 #endif
 
