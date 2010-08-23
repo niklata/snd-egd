@@ -95,7 +95,7 @@ int main(int argc, char **argv)
         {"device",  1, NULL, 'd'},
         {"port", 1, NULL, 'i'},
         {"max-bit", 1, NULL, 'b'},
-        {"do-not-fork", 1, NULL, 'n'},
+        {"nodetach", 1, NULL, 'n'},
         {"sample-rate", 1, NULL, 'r'},
         {"skip-bytes", 1, NULL, 's'},
         {"pid-file", 1, NULL, 'p'},
@@ -355,7 +355,7 @@ static void usage(void)
     printf("--user          -u []  User name or id to change to after dropping privileges.\n");
     printf("--group         -g []  Group name or id to change to after dropping privileges.\n");
     printf("--chroot        -c []  Directory to use as the chroot jail.\n");
-    printf("--do-not-fork   -n     Do not fork.\n");
+    printf("--nodetach      -n     Do not fork.\n");
     printf("--verbose,      -v     Be verbose.\n");
     printf("--help,         -h     This help.\n");
 }

@@ -1,56 +1,53 @@
-This program can convert analog sound signals into a source of entropy for the
-Linux kernel random number generator.  The quality of entropy generated is of
-course dependent on the input signal.  White noise from radio samples between
-broadcast radio signals (atmospheric noise) would be ideal, but just a simple
-disconnected microphone or line input connector on a sound card with
-sufficiently high gain will generate thermal noise.
+Copyright (C) 2008-2010 Nicholas J. Kain
+Licensed under GNU GPLv3.
 
-The input data is not merely fed into the KRNG without any transformations;
-whitening of the input data is first performed.
+Requirements
+------------
 
-The whitening method is simple and relatively fast.  A configurable number of
-bits (preference towards the least significant bits) are sampled from both the
-left and right input channels.  Each bit from each channel is treated as a
-unique bitstream, and each channel is handled in sequence -- they are not
-interleaved.  For each input bitstream, von Neumann's method for normalizing
-the output of an unfair coin is performed, in order to remove any bias that may
-exist in the source signal (and sound card / ADC).  The output from each
-bitstream is interleaved together in a first-encountered, first-output manner
-to form the output data that is fed to the KRNG.  This approach is intentional,
-as it improves diffusion and makes it difficult to determine the source
-bitstream of any given output bit.
+Linux Kernel (ALSA is needed; I haven't added support for OSS)
+C99 compiler (I used gcc 4.x)
 
-I once implemented another, more complex scheme called AMLS (Advanced
-Multi-Level System), but it was far slower and took more space.  It may be a
-win for a data source that generates entropy much more slowly than a sound
-card, but a sound card has no need to spare every possible bit.
+Installation
+------------
 
-This whitening method should be fine assuming that the change in probability of
-a 1 or 0 bit for any given input bitstream is continuous with respect to time.
-This is ensured by using the absolute difference in value between samples per
-channel.  Since temperature is probably the largest influence in real world
-situations, this assumption should be fine.
+Edit defines.h as necessary.
 
-Speed of random number generation is dependent on having well-distributed input
-bitstreams.  This will be mostly dependent on having proper mixer settings.
-It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~57KB/s of
-random data with the current approach.
+make
+strip snd-egd
 
-This approach will sacrifice a lot of speed compared to direct sampling of
-soundcard data (with von Neumann's method, and all input bits used, throughput
-will be reduced to no faster than 50% of the unprocessed speed; 30% is more
-typical), but should ensure a higher degree of quasi-randomness.  These values
-are upper bounds; in practice, the throughput loss from normalization will be
-much greater.
+Copy snd-egd to a path of your choice.
 
-For higher performance, the amount of data sampled from the sound card varies
-dynamically to keep a static ring buffer of entropy filled with minimum waste.
+Create a new user and group for snd-egd, and create an empty directory for
+its chroot jail. (optional)
 
-Entropy quality is not checked, since it is only possible to discard obviously
-non-normalized inputs, and normalization is performed by default.  Entropy
-quality will be dependent on the source of the input signal.  Frequency
-statistics of each possible byte of output are kept, and are useful for
-ensuring that the output is not insane -- it should be well-dispersed if
-the input is indeed random.
+Set your sound card mixer settings so that a non-muted recording channel
+is available.  Confirm that it is producing output.  Turn up the gain
+as high as is possible without compressing the dynamic range of the output.
 
-- Nicholas Kain ( njk aaaaaaat kain dot us )
+Run snd-egd as a root user with a command line similar to the following:
+
+snd-egd -nv -u snd-egd -c /var/empty
+
+Drain the kernel random device of stored entropy by running the
+following command in another terminal:
+
+cat /dev/urandom >| /dev/null
+
+snd-egd should print to its controlling terminal output indicating that
+the random device is being filled back with sample entropy as it is being
+drained.
+
+Check the frequency distribution of the generated entropy by either
+exiting snd-egd (ctrl+c or send a signal) or by sending it the SIGUSR1
+signal.  Make sure that the generated output looks fairly uniform in
+dispersion.  Note that a fair number of samples should be taken to
+judge uniformity; truly random data will contain nonuniformity in small
+sample sets.
+
+If everything looks good, run on a permanent basis by using a command
+similar to the following:
+
+snd-egd -nv -u snd-egd -c /var/empty
+
+Add the command to your init scripts if you wish for snd-egd to run
+at startup.

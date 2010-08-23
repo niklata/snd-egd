@@ -1,0 +1,140 @@
+.\" Man page for snd-egd
+.\"
+.\" Copyright (c) 2008-2010 Nicholas J. Kain
+.\"
+.TH snd-egd 1 "August 22, 2010"
+.LO 1
+.SH NAME
+snd-egd \- sound card entropy gathering daemon
+.SH SYNOPSIS
+.SY snd-egd
+.OP OPTIONS
+.YS
+.SH DESCRIPTION
+snd-egd can convert analog sound signals into a source of entropy for the Linux
+kernel random number device.  The quality of entropy generated is dependent on
+the input signal.  White noise from radio signals between broadcast radio
+stations (atmospheric noise) would be ideal, but just a simple disconnected
+microphone or line input connector on a sound card with sufficiently high gain
+will generate thermal noise.
+
+The input data is not merely fed into the KRNG without any transformations;
+whitening of the input data is first performed.
+
+The whitening method is simple and relatively fast.  A configurable number of
+bits with preference towards the least significant bits are sampled from both
+the left and right input channels.  Each bit from each channel is treated as a
+unique bitstream, and each channel is handled separately in sequence.  For each
+input bitstream, von Neumann's method for normalizing the output of an unfair
+coin is performed, in order to remove any bias that may exist in the source
+signal (and sound card / ADC).  The output from each bitstream is interleaved
+together in a first-encountered, first-output manner to form the output data
+that is fed to the KRNG.  This approach is intentional, as it improves
+diffusion and makes it difficult to determine the source bitstream of any given
+output bit.
+
+This whitening method should be fine assuming that the change in probability of
+a 1 or 0 bit for any given input bitstream is continuous with respect to time.
+This is ensured by using the absolute difference in value between samples per
+channel.  Since temperature is probably the largest influence in real world
+situations, this assumption should be fine.
+
+Speed of random number generation is dependent on having well-distributed input
+bitstreams.  This will be mostly dependent on having proper mixer settings.
+It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~23KB/s of
+random data with the current approach.
+
+This approach sacrifices a lot of speed compared to direct sampling of
+soundcard data (with von Neumann's method, and all input bits used, throughput
+will be reduced to no faster than 50% of the unprocessed speed; 12% is more
+typical), but should provide better output data that populates the entire range
+of possible bytes.  These values are upper bounds; in practice, the throughput
+loss from normalization will be much greater.
+
+For higher performance, the amount of data sampled from the sound card varies
+dynamically to keep a static ring buffer of entropy filled with minimum waste.
+
+Entropy quality is not checked, since it is only possible to discard obviously
+non-normalized inputs, and normalization is performed by default.  Entropy
+quality will be dependent on the source of the input signal.  Frequency
+statistics of each possible byte of output are kept, and are useful for
+ensuring that the output is not insane -- it should be well-dispersed if
+the input is indeed random.
+.SH OPTIONS
+.TP
+.B \-\^d , \-\-device=DEVICE
+Specifies the ALSA device name that will be sampled for input.  The default
+is 'hw:0'.
+.TP
+.B \-\^i , \-\-item=ITEM
+Specifies the subitem of the ALSA device that will be used for the input.  The
+default is 'capture'.
+.TP
+.B \-\^b , \-\-max\-bit=MAXBIT
+Specifies the maximum significant bit that will be used in sample data.  The
+default is to use all available bits (16).
+.TP
+.B \-\^s , \-\-skip\-bytes=NUMBYTES
+Specifies the number of bytes of input from the sound card that will be
+ignored after the sound card device is opened.  Many sound cards create
+popping noises or similar when brought back from sleep state, so this
+option allows for those predictable samples to be skipped.  Default
+is 65536 bytes.
+.TP
+.B \-\^p , \-\-pidfile=FILE
+Specify he file in which the process id of ncron will be stored; the
+default is
+.BR /var/run/snd-egd.pid .
+.TP
+.B \-\^u , \-\-user=USERNAME
+Specifies the user name that snd-egd should change to once it has confined
+itself to a chroot.  This account should be a unique account with no access
+to files outside of the chroot.
+.TP
+.B \-\^g , \-\-group=GROUPNAME
+Specifies the group name that snd-egd should change to once it has confined
+itself to a chroot.  This group should be unique with no access to files
+outside of the chroot.
+.TP
+.B \-\^c , \-\-chroot=PATH
+Specify the location into which snd-egd should chroot itself.  The default is
+to not chroot.
+.TP
+.B \-\^n   \-\-nodetach
+Do not detach from the controlling terminal and remain in the foreground.
+.TP
+.B \-\^v   \-\-version
+Print version information and exit.
+.TP
+.BR \-\^h  \-\-help
+Print abbreviated help and exit.
+.SH CONFIGURATION
+It is important that the sound card be properly configured.  A non-muted
+capture channel should be specified, and that channel gain should be set
+reasonably to ensure fast entropy gathering.  Higher quality random input
+to the sound card will produce better results.
+
+snd-egd does not process inputs other than those from the sound card and
+the kernel syscalls for querying the state of the random device, so it
+should not pose a security issue.  Nevertheless, snd-egd is capable of
+restricting its capability set to the minimum required (CAP_SYS_ADMIN)
+and running as an otherwise normal user and group.  It can also be
+safely restricted to an empty directory via chroot.
+.SH SIGNALS
+.TP
+SIGHUP, SIGINT, SIGTERM:
+Exits the program.
+.TP
+SIGUSR1:
+Prints character counts for each possible byte of output.
+.TP
+SIGUSR2:
+Toggles debug outputs.
+.SH ENVIRONMENT
+snd-egd ignores its environment.
+.SH BUGS
+None known, otherwise they would be fixed.  Please report any that you may
+find.
+.SH AUTHOR
+Nicholas J. Kain <njkain (at) gmail.com>
+
