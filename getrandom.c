@@ -33,11 +33,35 @@ static unsigned int stats[2][16][256];
 
 void print_random_stats(void)
 {
-    log_line(LOG_DEBUG, "sampled random character counts:");
-    for (int j = 0; j < 16; ++j) {
-        for (int i = 0; i < 256; ++i) {
-            log_line(LOG_DEBUG, "%i:\t %d\t %d", i, stats[0][j][i], stats[1][j][i]);
-        }
+    log_line(LOG_DEBUG, "LEFT sampled random character counts:");
+    log_line(LOG_DEBUG, "byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8");
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d", i,
+                 stats[0][0][i], stats[0][1][i], stats[0][2][i],
+                 stats[0][3][i], stats[0][4][i], stats[0][5][i],
+                 stats[0][6][i], stats[0][7][i]);
+    }
+    log_line(LOG_DEBUG, "byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d", i,
+                 stats[0][8][i], stats[0][9][i], stats[0][10][i],
+                 stats[0][11][i], stats[0][12][i], stats[0][13][i],
+                 stats[0][14][i], stats[0][15][i]);
+    }
+    log_line(LOG_DEBUG, "RIGHT sampled random character counts:");
+    log_line(LOG_DEBUG, "byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8\t");
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d", i,
+                 stats[1][0][i], stats[1][1][i], stats[1][2][i],
+                 stats[1][3][i], stats[1][4][i], stats[1][5][i],
+                 stats[1][6][i], stats[1][7][i]);
+    }
+    log_line(LOG_DEBUG, "byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
+    for (int i = 0; i < 256; ++i) {
+        log_line(LOG_DEBUG, "%i:\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d", i,
+                 stats[1][8][i], stats[1][9][i], stats[1][10][i],
+                 stats[1][11][i], stats[1][12][i], stats[1][13][i],
+                 stats[1][14][i], stats[1][15][i]);
     }
     log_line(LOG_DEBUG, "total random character counts:");
     for (int i = 0; i < 256; ++i) {
