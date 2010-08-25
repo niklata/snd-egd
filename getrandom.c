@@ -24,12 +24,17 @@
 #include "util.h"
 
 extern ring_buffer_t rb;
-extern unsigned char max_bit;
 
 /* Global for speed... */
 static union frame_t vnbuf[PAGE_SIZE / sizeof(union frame_t)];
 static vn_renorm_state_t vnstate[2];
 static unsigned int stats[2][16][256];
+
+void vn_buf_lock(void)
+{
+    mlock(vnbuf, sizeof vnbuf);
+    mlock(vnstate, sizeof vnstate);
+}
 
 void print_random_stats(void)
 {
@@ -80,7 +85,6 @@ static void vn_renorm_init(void)
 
     for (i = 0; i < 2; ++i) {
         vnstate[i].total_out = 0;
-        vnstate[i].topbit = MIN(max_bit, 16);
         for (j = 0; j < 16; ++j) {
             vnstate[i].bits_out[j] = 0;
             vnstate[i].byte_out[j] = 0;
@@ -121,7 +125,7 @@ static int vn_renorm(uint16_t i, size_t channel)
     unsigned int j, new;
 
     /* process bits */
-    for (j = 0; j < vnstate[channel].topbit; ++j) {
+    for (j = 0; j < 16; ++j) {
         /* Select the bit of given significance. */
         new = (i >> j) & 0x01;
 
