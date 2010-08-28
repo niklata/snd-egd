@@ -30,6 +30,7 @@
 #define PAGE_SIZE 4096
 
 #define USE_EPOLL 1
+#define USE_AMLS 1
 
 #define RANDOM_DEVICE               "/dev/random"
 #define DEFAULT_PID_FILE            "/var/run/snd-egd.pid"

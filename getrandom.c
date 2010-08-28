@@ -108,6 +108,49 @@ static size_t buf_to_deltabuf(size_t frames)
     return frames - 1;
 }
 
+#ifdef USE_AMLS
+static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
+{
+    // No previous bit pairs is stored
+    if (vnstate[channel].amls_bits[diffbits][j] == -1) {
+        vnstate[channel].amls_bits[diffbits][j] = new;
+        return 0;
+    }
+
+    // If this bit pair != previous bit pair, store a bit
+    if (vnstate[channel].amls_bits[diffbits][j] == new) {
+        vnstate[channel].amls_bits[diffbits][j] = -1;
+        return 0;
+    }
+
+    if (vnstate[channel].amls_bits[diffbits][j])
+        vnstate[channel].amls_byte_out[diffbits][j] |=
+            1 << vnstate[channel].amls_bits_out[diffbits][j];
+    vnstate[channel].amls_bits_out[diffbits][j]++;
+    vnstate[channel].amls_bits[diffbits][j] = -1;
+
+    /* See if we've collected an entire byte.  If so, then copy
+     * it into the output buffer. */
+    if (vnstate[channel].amls_bits_out[diffbits][j] == 8) {
+        stats[channel][j][vnstate[channel].amls_byte_out[diffbits][j]] += 1;
+        vnstate[channel].total_out +=
+            rb_store_byte_xor(&rb, vnstate[channel].amls_byte_out[diffbits][j]);
+
+        vnstate[channel].amls_bits_out[diffbits][j] = 0;
+        vnstate[channel].amls_byte_out[diffbits][j] = 0;
+
+        if (rb_is_full(&rb))
+            return 1;
+    }
+    return 0;
+}
+#else
+static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
+{
+    return 0;
+}
+#endif
+
 /*
  * We assume that the chance of a given bit in a sample being a 0 or 1 is not
  * equal.  It is thus a statistically unfair 'coin'.  We can nevertheless use
@@ -138,6 +181,8 @@ static int vn_renorm(uint16_t i, size_t channel)
         /* If the bits are equal, discard both. */
         if (vnstate[channel].prev_bits[j] == new) {
             vnstate[channel].prev_bits[j] = -1;
+            if (vn_renorm_amls(new, j, channel, 0))
+                return 1;
             continue;
         }
 
@@ -147,6 +192,8 @@ static int vn_renorm(uint16_t i, size_t channel)
             vnstate[channel].byte_out[j] |= 1 << vnstate[channel].bits_out[j];
         vnstate[channel].bits_out[j]++;
         vnstate[channel].prev_bits[j] = -1;
+        if (vn_renorm_amls(new, j, channel, 1))
+            return 1;
 
         /* See if we've collected an entire byte.  If so, then copy
          * it into the output buffer. */
