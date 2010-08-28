@@ -1,4 +1,4 @@
-VERSION = 1.0
+VERSION = 1.1
 OPT_FLAGS = -std=gnu99
 WARNFLAGS = -Wall -pedantic
 CFLAGS += $(WARNFLAGS) $(OPT_FLAGS)

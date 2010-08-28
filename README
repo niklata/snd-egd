@@ -64,9 +64,14 @@ simple way to do that is to just take edges: for any two bits, 00 -> skip, 11
 
 It is also possible to extract more randomness from a normalized sequence by
 applying the above method recursively: 00/11 pairs and 01/10 pairs are each
-treated as new sequences, but that's only worthwhile if the sample source is
-something that slowly generates bits (like a radioactive decay source).  This
-method is sometimes called the Advanced Multi-level Strategy in the literature.
+treated as new sequences.  This method is sometimes called the Advanced
+Multi-level Strategy (AMLS) in the literature.
+
+AMLS is used in snd-egd, but only to a single depth of iteration.  Since every
+depth of iteration can only generate half as many bits as the previous depth
+and requires twice as much temporary storage, and AMLS performance is dependent
+on very long inputs to perform at its theoretical level, deeply recursive AMLS
+is not useful.
 
 However, a sound card's signal isn't really random when represented as raw
 samples.  If the input signal is a random walk for any given bit, then what
