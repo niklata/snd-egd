@@ -194,7 +194,7 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     if (ioctl(handle, RNDADDENTROPY, poolbuf) == -1)
         suicide("RNDADDENTROPY failed!");
 
-    log_line(LOG_DEBUG, "%d bits requested, %d bits stored, %d bits added, %d bits remain",
+    log_line(LOG_DEBUG, "%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
              wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
@@ -227,7 +227,8 @@ static void main_loop(int random_fd, int max_bits)
         for (i = 0; i < wanted_bits;)
             i += add_entropy(&poolbuf, random_fd, wanted_bits - i);
 
-        get_random_data(rb.size - rb.bytes);
+        if (rb.bytes < sizeof rb.buf / 4)
+            get_random_data(rb.size - rb.bytes);
     }
 }
 
