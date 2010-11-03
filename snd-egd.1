@@ -39,11 +39,11 @@ situations, this assumption should be fine.
 
 Speed of random number generation is dependent on having well-distributed input
 bitstreams.  This will be mostly dependent on having proper mixer settings.
-It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~23KB/s of
+It's quite feasible for a stereo, 16-bit HDA sound chip to produce ~38KB/s of
 random data with the current approach.
 
 This approach discards a lot of data compared to direct sampling of sound card
-output; it is typical to see around 88% of all sound card output discarded in
+output; it is typical to see around 80% of all sound card output discarded in
 my own tests, but whitening should provide better output data that populates
 the entire range of possible bytes regardless of the dynamic range of the
 input data.

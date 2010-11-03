@@ -12,8 +12,10 @@ Installation
 
 Edit defines.h as necessary.
 
+mkdir ../build-snd-egd
+cd ../build-snd-egd
+cmake ../snd-egd
 make
-strip snd-egd
 
 Copy snd-egd to a path of your choice.
 
@@ -102,7 +104,7 @@ New entropy is xored with the old entropy when it is added.  The position
 in the buffer does not vary as a 'ring' in any given iteration -- the path
 through the buffer wanders unpredictably.
 
-Input is sampled from the sound card using the method descrived above in
+Input is sampled from the sound card using the method described above in
 the 'Theory of Operation' section.  Both the left and right channels are
 used in 48000Hz 16-bit mode.  Each bit in each channel is treated as
 a separate bitstream.  When a full byte of input from any given bitstream
@@ -120,5 +122,5 @@ Possible Improvements
 ---------------------
 
 Support for OSS.
-Use CMake: select ALSA/OSS, little or big endian, epoll(), PAGE_SIZE.
+CMake: detect ALSA/OSS, little or big endian, epoll(), PAGE_SIZE.
 Automatically adjust gain of input source to maximize dynamic range.
