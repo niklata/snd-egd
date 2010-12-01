@@ -22,6 +22,8 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <linux/random.h>
+#include <sys/epoll.h>
+#include <sys/signalfd.h>
 #include <sys/capability.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
@@ -35,6 +37,11 @@
 #include "sound.h"
 #include "rb.h"
 #include "getrandom.h"
+
+static int signalFd;
+
+static int epollfd;
+static struct epoll_event events[2];
 
 ring_buffer_t rb;
 
@@ -57,27 +64,6 @@ static void exit_cleanup(int signum)
     exit(0);
 }
 
-static void sighandler(int signum)
-{
-    int t;
-    switch (signum) {
-        case SIGHUP:
-        case SIGINT:
-        case SIGTERM:
-            exit_cleanup(signum);
-            break;
-        case SIGUSR1:
-            t = gflags_debug;
-            gflags_debug = 1;
-            print_random_stats();
-            gflags_debug = t;
-            break;
-        case SIGUSR2:
-            gflags_debug = !gflags_debug;
-            break;
-    }
-}
-
 static void drop_privs(int uid, int gid)
 {
     cap_t caps;
@@ -94,51 +80,55 @@ static void drop_privs(int uid, int gid)
     cap_free(caps);
 }
 
-#ifdef USE_EPOLL
-#include <sys/epoll.h>
-static int epollfd;
-static struct epoll_event ev, events[1];
-
-/* Wait for krng to fall below entropy watermark */
-static void wait_for_watermark(int random_fd)
+static void signal_dispatch()
 {
-    for (;;) {
-        int ret = epoll_wait(epollfd, events, 1, -1);
-        if (ret == -1)
-            suicide("epoll_wait failed");
-        if (events[0].data.fd == random_fd)
+    int t, off = 0;
+    struct signalfd_siginfo si;
+  again:
+    t = read(signalFd, (char *)&si + off, sizeof si - off);
+    if (t < sizeof si - off) {
+        if (t < 0) {
+            if (t == EAGAIN || t == EWOULDBLOCK || t == EINTR)
+                goto again;
+            else
+                suicide("signalfd read error");
+        }
+        off += t;
+    }
+    switch (si.ssi_signo) {
+        case SIGHUP:
+        case SIGINT:
+        case SIGTERM:
+            exit_cleanup(si.ssi_signo);
+            break;
+        case SIGUSR1:
+            t = gflags_debug;
+            gflags_debug = 1;
+            print_random_stats();
+            gflags_debug = t;
+            break;
+        case SIGUSR2:
+            gflags_debug = !gflags_debug;
             break;
     }
 }
 
 static void epoll_init(int random_fd)
 {
-    epollfd = epoll_create(1);
+    static struct epoll_event ev;
+    epollfd = epoll_create1(0);
     if (epollfd == -1)
-        suicide("epoll_create failed");
+        suicide("epoll_create1 failed");
 
     ev.events = EPOLLOUT;
     ev.data.fd = random_fd;
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, random_fd, &ev) == -1)
         suicide("epoll_ctl failed");
+    ev.events = EPOLLIN;
+    ev.data.fd = signalFd;
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, signalFd, &ev) == -1)
+        suicide("epoll_ctl failed");
 }
-#else
-static void wait_for_watermark(int random_fd)
-{
-    fd_set write_fd;
-    FD_ZERO(&write_fd);
-    FD_SET(random_fd, &write_fd);
-
-    for (;;) {
-        if (select(random_fd + 1, NULL, &write_fd, NULL, NULL) >= 0)
-            break;
-        if (errno != EINTR)
-            suicide("Select error: %m");
-    }
-}
-
-static void epoll_init(int random_fd) {}
-#endif
 
 static int random_max_bits(int random_fd)
 {
@@ -200,35 +190,52 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     return wanted_bytes * 8;
 }
 
-static void main_loop(int random_fd, int max_bits)
+static void fill_entropy(int random_fd, int max_bits)
 {
     int i, before, wanted_bits;
     struct pool_buffer_t poolbuf;
 
-    /* Prefill entropy buffer */
-    get_random_data(rb.size - rb.bytes);
+    log_line(LOG_DEBUG, "woke up due to low entropy state");
 
-    for(;;) {
-        wait_for_watermark(random_fd);
-        log_line(LOG_DEBUG, "woke up due to low entropy state");
+    /* Find out how many bits to add */
+    before = random_cur_bits(random_fd);
+    wanted_bits = max_bits - before;
+    log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
+             max_bits, wanted_bits);
 
-        /* Find out how many bits to add */
-        before = random_cur_bits(random_fd);
-        wanted_bits = max_bits - before;
-        log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
-                 max_bits, wanted_bits);
+    /*
+     * Loop until the buffer is full: we do not check the number of
+     * bits currently in the buffer on each iteration, since it
+     * might cause snd-egd to run constantly if there are
+     * a lot of bytes being consumed from the random device.
+     */
+    for (i = 0; i < wanted_bits;)
+        i += add_entropy(&poolbuf, random_fd, wanted_bits - i);
 
-        /*
-         * Loop until the buffer is full: we do not check the number of
-         * bits currently in the buffer on each iteration, since it
-         * might cause snd-egd to run constantly if there are
-         * a lot of bytes being consumed from the random device.
-         */
-        for (i = 0; i < wanted_bits;)
-            i += add_entropy(&poolbuf, random_fd, wanted_bits - i);
+    if (rb.bytes < sizeof rb.buf / 4)
+        get_random_data(rb.size - rb.bytes);
+}
 
-        if (rb.bytes < sizeof rb.buf / 4)
-            get_random_data(rb.size - rb.bytes);
+static void main_loop(int random_fd, int max_bits)
+{
+    for (;;) {
+        int ret = epoll_wait(epollfd, events, 2, -1);
+        if (ret == -1) {
+            if (errno == EINTR)
+                continue;
+            else
+                suicide("epoll_wait failed");
+        }
+        if (ret == -1)
+            suicide("epoll_wait failed");
+        for (int i = 0; i < ret; ++i) {
+            int fd = events[i].data.fd;
+            if (fd == signalFd) {
+                signal_dispatch();
+            } else if (fd == random_fd) {
+                fill_entropy(random_fd, max_bits);
+            }
+        }
     }
 }
 
@@ -265,6 +272,23 @@ static void copyright(void)
 
         "You should have received a copy of the GNU General Public License\n"
         "along with this program.  If not, see <http://www.gnu.org/licenses/>.\n\n");
+}
+
+static void setup_signals()
+{
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGPIPE);
+    sigaddset(&mask, SIGHUP);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGUSR1);
+    sigaddset(&mask, SIGUSR2);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0)
+        suicide("sigprocmask failed");
+    signalFd = signalfd(-1, &mask, SFD_NONBLOCK);
+    if (signalFd < 0)
+        suicide("signalfd failed");
 }
 
 int main(int argc, char **argv)
@@ -346,12 +370,7 @@ int main(int argc, char **argv)
         }
     }
 
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGHUP, sighandler);
-    signal(SIGINT, sighandler);
-    signal(SIGTERM, sighandler);
-    signal(SIGUSR1, sighandler);
-    signal(SIGUSR2, sighandler);
+    setup_signals();
 
     log_line(LOG_NOTICE, "snd-egd starting up");
 
@@ -384,6 +403,9 @@ int main(int argc, char **argv)
     rb_init(&rb);
     vn_buf_lock();
     epoll_init(random_fd);
+
+    /* Prefill entropy buffer */
+    get_random_data(rb.size - rb.bytes);
 
     main_loop(random_fd, max_bits);
 
