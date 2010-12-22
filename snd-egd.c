@@ -73,7 +73,7 @@ static void drop_privs(int uid, int gid)
         suicide("cap_from_text failed");
     if (setgroups(0, NULL) == -1)
         suicide("setgroups failed");
-    if (setegid(18) == -1 || seteuid(130) == -1)
+    if (setegid(gid) == -1 || seteuid(uid) == -1)
         suicide("dropping privs failed");
     if (cap_set_proc(caps) == -1)
         suicide("cap_set_proc failed");
