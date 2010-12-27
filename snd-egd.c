@@ -370,8 +370,6 @@ int main(int argc, char **argv)
         }
     }
 
-    setup_signals();
-
     log_line(LOG_NOTICE, "snd-egd starting up");
 
     /* Open kernel random device */
@@ -384,6 +382,8 @@ int main(int argc, char **argv)
 
     if (gflags_detach)
         daemonize();
+
+    setup_signals();
 
     sound_open();
 
