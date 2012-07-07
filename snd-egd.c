@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2010 Nicholas J. Kain <nicholas aatt kain.us>
+ * Copyright (C) 2008-2012 Nicholas J. Kain <nicholas aatt kain.us>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,9 +17,11 @@
 
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <time.h>
 #include <errno.h>
 #include <linux/random.h>
 #include <sys/epoll.h>
@@ -44,6 +46,8 @@ static int epollfd;
 static struct epoll_event events[2];
 
 ring_buffer_t rb;
+
+static int refill_timeout = DEFAULT_REFILL_SECS;
 
 struct pool_buffer_t {
     struct rand_pool_info info;
@@ -190,18 +194,13 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     return wanted_bytes * 8;
 }
 
-static void fill_entropy(int random_fd, int max_bits)
+static void fill_entropy_amount(int random_fd, int max_bits, int wanted_bits)
 {
-    int i, before, wanted_bits;
+    int i;
     struct pool_buffer_t poolbuf;
 
-    log_line(LOG_DEBUG, "woke up due to low entropy state");
-
-    /* Find out how many bits to add */
-    before = random_cur_bits(random_fd);
-    wanted_bits = max_bits - before;
-    log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
-             max_bits, wanted_bits);
+    if (wanted_bits > max_bits)
+        wanted_bits = max_bits;
 
     /*
      * Loop until the buffer is full: we do not check the number of
@@ -216,10 +215,60 @@ static void fill_entropy(int random_fd, int max_bits)
         get_random_data(rb.size - rb.bytes);
 }
 
+static void fill_entropy(int random_fd, int max_bits)
+{
+    int before, wanted_bits;
+
+    log_line(LOG_DEBUG, "woke up due to low entropy state");
+
+    /* Find out how many bits to add */
+    before = random_cur_bits(random_fd);
+    wanted_bits = max_bits - before;
+    log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
+             max_bits, wanted_bits);
+
+    fill_entropy_amount(random_fd, max_bits, wanted_bits);
+}
+
+static void refill_timeout_set(int timeout)
+{
+    refill_timeout = timeout * 1000;
+    if (refill_timeout < 0)
+        refill_timeout = -1;
+}
+
+static bool refill_if_timeout(int random_fd, int max_bits, int timeout)
+{
+    static struct timespec refill_ts;
+    struct timespec curts;
+    bool ts_filled = false;
+
+    if (timeout < 0)
+        goto out;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &curts))
+        suicide("clock_gettime failed");
+    time_t secdiff = (curts.tv_sec - refill_ts.tv_sec) * 1000;
+    long nsecdiff = (long)secdiff * 1000000L +
+                    curts.tv_nsec - refill_ts.tv_nsec;
+    if (secdiff >= timeout || nsecdiff >= (long)timeout * 1000000000L) {
+        ts_filled = true;
+        log_line(LOG_DEBUG, "timeout: filling with entropy");
+        fill_entropy_amount(random_fd, max_bits, max_bits);
+    }
+    refill_ts.tv_sec = curts.tv_sec;
+    refill_ts.tv_nsec = curts.tv_nsec;
+out:
+    return ts_filled;
+}
+
 static void main_loop(int random_fd, int max_bits)
 {
+    /* Fill up the buffer and refresh any timeout. */
+    refill_if_timeout(random_fd, max_bits, 0);
+
     for (;;) {
-        int ret = epoll_wait(epollfd, events, 2, -1);
+        int ret = epoll_wait(epollfd, events, 2, refill_timeout);
         if (ret == -1) {
             if (errno == EINTR)
                 continue;
@@ -228,12 +277,17 @@ static void main_loop(int random_fd, int max_bits)
         }
         if (ret == -1)
             suicide("epoll_wait failed");
+
+        bool ts_filled = refill_if_timeout(random_fd, max_bits,
+                                           refill_timeout);
+
         for (int i = 0; i < ret; ++i) {
             int fd = events[i].data.fd;
             if (fd == signalFd) {
                 signal_dispatch();
             } else if (fd == random_fd) {
-                fill_entropy(random_fd, max_bits);
+                if (!ts_filled)
+                    fill_entropy(random_fd, max_bits);
             }
         }
     }
@@ -246,6 +300,7 @@ static void usage(void)
     printf("--device,       -d []  Sound device used (default %s)\n", DEFAULT_HW_DEVICE);
     printf("--item,         -i []  Sound device item used (default %s)\n", DEFAULT_HW_ITEM);
     printf("--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
+    printf("--refill-time   -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
     printf("--skip-bytes,   -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
     printf("--pid-file,     -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
     printf("--user          -u []  User name or id to change to after dropping privileges.\n");
@@ -259,7 +314,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf(
-        "snd-egd %s Copyright (C) 2008-2010 Nicholas J. Kain\n"
+        "snd-egd %s Copyright (C) 2008-2012 Nicholas J. Kain\n"
         "This program is free software: you can redistribute it and/or modify\n"
         "it under the terms of the GNU General Public License as published by\n"
         "the Free Software Foundation, either version 3 of the License, or\n"
@@ -300,6 +355,7 @@ int main(int argc, char **argv)
         {"nodetach", 1, NULL, 'n'},
         {"sample-rate", 1, NULL, 'r'},
         {"skip-bytes", 1, NULL, 's'},
+        {"refill-time", 1, NULL, 't'},
         {"pid-file", 1, NULL, 'p'},
         {"user", 1, NULL, 'u'},
         {"group", 1, NULL, 'g'},
@@ -313,7 +369,7 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:nr:s:p:u:g:c:vh",
+        c = getopt_long(argc, argv, "d:i:nr:s:t:p:u:g:c:vh",
                         long_options, NULL);
         if (c == -1)
             break;
@@ -339,6 +395,11 @@ int main(int argc, char **argv)
             case 'r':
                 t = atoi(optarg);
                 sound_set_sample_rate(t);
+                break;
+
+            case 't':
+                t = atoi(optarg);
+                refill_timeout_set(t);
                 break;
 
             case 'p':

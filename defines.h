@@ -2,7 +2,7 @@
 #define NJK_DEFINES_H_ 1
 
 /*
- * Copyright (C) 2008-2010 Nicholas J. Kain <nicholas aatt kain.us>
+ * Copyright (C) 2008-2012 Nicholas J. Kain <nicholas aatt kain.us>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#define SNDEGD_VERSION "1.1"
+#define SNDEGD_VERSION "1.2"
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)>(b)?(b):(a))
@@ -39,6 +39,7 @@
 #define DEFAULT_SKIP_BYTES          (48000 * 4 * 1)
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
+#define DEFAULT_REFILL_SECS         -1
 #define RB_SIZE                     PAGE_SIZE
 #define POOL_BUFFER_SIZE            PAGE_SIZE
 
