@@ -39,6 +39,7 @@
 #include "sound.h"
 #include "rb.h"
 #include "getrandom.h"
+#include "seccomp-bpf.h"
 
 static int signalFd;
 
@@ -55,6 +56,40 @@ struct pool_buffer_t {
 };
 
 static char *chroot_path;
+
+static int enforce_seccomp(void)
+{
+    struct sock_filter filter[] = {
+        VALIDATE_ARCHITECTURE,
+        EXAMINE_SYSCALL,
+        ALLOW_SYSCALL(epoll_wait),
+        ALLOW_SYSCALL(read),
+        ALLOW_SYSCALL(write),
+        ALLOW_SYSCALL(sendto), // for glibc syslog
+        ALLOW_SYSCALL(close),
+        ALLOW_SYSCALL(ioctl),
+        ALLOW_SYSCALL(munlockall),
+        ALLOW_SYSCALL(unlink),
+        ALLOW_SYSCALL(munmap),
+
+        ALLOW_SYSCALL(rt_sigreturn),
+#ifdef __NR_sigreturn
+        ALLOW_SYSCALL(sigreturn),
+#endif
+        ALLOW_SYSCALL(exit_group),
+        ALLOW_SYSCALL(exit),
+        KILL_PROCESS,
+    };
+    struct sock_fprog prog = {
+        .len = (unsigned short)(sizeof filter / sizeof filter[0]),
+        .filter = filter,
+    };
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+        return -1;
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog))
+        return -1;
+    return 0;
+}
 
 static void exit_cleanup(int signum)
 {
@@ -464,6 +499,8 @@ int main(int argc, char **argv)
     rb_init(&rb);
     vn_buf_lock();
     epoll_init(random_fd);
+    if (enforce_seccomp())
+        log_line(LOG_NOTICE, "seccomp filter cannot be installed");
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
