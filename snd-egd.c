@@ -66,6 +66,7 @@ static int enforce_seccomp(void)
         ALLOW_SYSCALL(read),
         ALLOW_SYSCALL(write),
         ALLOW_SYSCALL(sendto), // for glibc syslog
+        ALLOW_SYSCALL(clock_gettime),
         ALLOW_SYSCALL(close),
         ALLOW_SYSCALL(ioctl),
         ALLOW_SYSCALL(munlockall),
