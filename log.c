@@ -41,8 +41,6 @@ char gflags_debug = 0;
 void log_line(int logtype, char *format, ...) {
     va_list argp;
 
-    if (format == NULL)
-        return;
     if (logtype == LOG_DEBUG && !gflags_debug)
         return;
 
@@ -58,14 +56,10 @@ void log_line(int logtype, char *format, ...) {
         fprintf(stderr, "\n");
         va_end(argp);
     }
-    closelog();
 }
 
 void suicide(char *format, ...) {
     va_list argp;
-
-    if (format == NULL)
-        goto out;
 
     if (gflags_detach) {
         openlog("snd-egd", LOG_PID, LOG_DAEMON);
@@ -80,8 +74,6 @@ void suicide(char *format, ...) {
         va_end(argp);
         perror(NULL);
     }
-    closelog();
-out:
     exit(EXIT_FAILURE);
 }
 
