@@ -151,15 +151,14 @@ static void signal_dispatch()
     struct signalfd_siginfo si;
   again:
     t = read(signalFd, (char *)&si + off, sizeof si - off);
-    if (t < sizeof si - off) {
-        if (t < 0) {
-            if (t == EAGAIN || t == EWOULDBLOCK || t == EINTR)
-                goto again;
-            else
-                suicide("signalfd read error");
-        }
-        off += t;
+    if (t < 0) {
+        if (t == EAGAIN || t == EWOULDBLOCK || t == EINTR)
+            goto again;
+        else
+            suicide("signalfd read error");
     }
+    if ((size_t)(t > 0 ? t : 0) < sizeof si - off)
+        off += t;
     switch (si.ssi_signo) {
         case SIGHUP:
         case SIGINT:

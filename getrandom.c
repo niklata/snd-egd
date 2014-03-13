@@ -105,7 +105,7 @@ static void vn_renorm_init(void)
 
 static size_t buf_to_deltabuf(size_t frames)
 {
-    int i;
+    size_t i;
 
     if (frames < 2)
         return 0;
@@ -119,7 +119,7 @@ static size_t buf_to_deltabuf(size_t frames)
 }
 
 #ifdef USE_AMLS
-static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
+static int vn_renorm_amls(char new, size_t j, int channel, int diffbits)
 {
     // No previous bit pairs is stored
     if (vnstate[channel].amls_bits[diffbits][j] == -1) {
@@ -155,7 +155,7 @@ static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
     return 0;
 }
 #else
-static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
+static int vn_renorm_amls(char new, size_t j, int channel, int diffbits)
 {
     return 0;
 }
@@ -175,7 +175,8 @@ static int vn_renorm_amls(unsigned int new, int j, int channel, int diffbits)
  */
 static int vn_renorm(uint16_t i, size_t channel)
 {
-    unsigned int j, new;
+    size_t j;
+    char new;
 
     /* process bits */
     for (j = 0; j < 16; ++j) {
@@ -230,7 +231,7 @@ void get_random_data(int target)
 
     log_line(LOG_DEBUG, "get_random_data(%d)", target);
 
-    target = MIN(sizeof vnbuf, target);
+    target = MIN(sizeof vnbuf, (size_t)(target > 0 ? target : 0));
 
     sound_start();
     while (total_out < target) {
