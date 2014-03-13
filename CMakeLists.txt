@@ -2,7 +2,7 @@ project (sndegd)
 
 cmake_minimum_required (VERSION 2.6)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -std=gnu99 -pedantic -Wall -lcap -lasound -lm")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -std=gnu99 -pedantic -Wall -Wextra -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -lcap -lasound -lm")
 
 file(GLOB SNDEGD_SRCS "*.c")
 
