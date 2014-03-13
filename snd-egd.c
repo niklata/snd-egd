@@ -195,7 +195,7 @@ static void epoll_init(int random_fd)
         suicide("epoll_ctl failed");
 }
 
-static int random_max_bits(int random_fd)
+static int random_max_bits()
 {
     int ret, fd;
     char buf[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -203,11 +203,16 @@ static int random_max_bits(int random_fd)
     fd = open(DEFAULT_POOLSIZE_FN, O_RDONLY);
     if (!fd)
         suicide("couldn't open poolsize procfs file");
-    if (read(fd, buf, sizeof buf - 1) == -1)
+    if (read(fd, buf, sizeof buf - 1) == -1) {
+        close(fd);
         suicide("failed to read poolsize procfs file");
+    }
     ret = atoi(buf);
-    if (ret < 1)
+    if (ret < 1) {
+        close(fd);
         suicide("poolsize can never be less than 1");
+    }
+    close(fd);
     return ret;
 }
 
