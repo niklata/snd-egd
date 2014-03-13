@@ -174,12 +174,12 @@ int sound_is_be(void)
 
 void sound_set_device(char *str)
 {
-    cdevice = strdup(optarg);
+    cdevice = strdup(str);
 }
 
 void sound_set_port(char *str)
 {
-    cdev_id = strdup(optarg);
+    cdev_id = strdup(str);
 }
 
 void sound_set_sample_rate(int rate)
