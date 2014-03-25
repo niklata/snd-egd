@@ -340,13 +340,12 @@ static void main_loop(int random_fd, int max_bits)
             else
                 suicide("epoll_wait failed");
         }
-        if (ret == -1)
-            suicide("epoll_wait failed");
 
         bool ts_filled = refill_if_timeout(random_fd, max_bits,
                                            refill_timeout);
 
-        for (int i = 0; i < ret; ++i) {
+        size_t evmax = ret > 0 ? ret : 0;
+        for (size_t i = 0; i < evmax; ++i) {
             int fd = events[i].data.fd;
             if (fd == signalFd) {
                 signal_dispatch();
