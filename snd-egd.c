@@ -1,5 +1,5 @@
 /*
- * (c) 2008-2013 Nicholas J. Kain <njkain at gmail dot com>
+ * (c) 2008-2014 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -66,6 +66,7 @@ struct pool_buffer_t {
 };
 
 static char *chroot_path;
+static int use_seccomp;
 
 static int enforce_seccomp(void)
 {
@@ -79,14 +80,21 @@ static int enforce_seccomp(void)
         ALLOW_SYSCALL(close),
         ALLOW_SYSCALL(ioctl),
 
+#if defined(__x86_64__) || (defined(__arm__) && defined(__ARM_EABI__))
         // for glibc syslog
         ALLOW_SYSCALL(sendto),
-        ALLOW_SYSCALL(open),
-        ALLOW_SYSCALL(fstat),
         ALLOW_SYSCALL(socket),
         ALLOW_SYSCALL(connect),
         ALLOW_SYSCALL(recvmsg),
         ALLOW_SYSCALL(getsockname),
+#elif defined(__i386__)
+        ALLOW_SYSCALL(socketcall),
+#else
+#error Target platform does not support seccomp-filter.
+#endif
+
+        ALLOW_SYSCALL(open),
+        ALLOW_SYSCALL(fstat),
 
         ALLOW_SYSCALL(munlockall),
         ALLOW_SYSCALL(unlink),
@@ -114,6 +122,7 @@ static int enforce_seccomp(void)
         return -1;
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog))
         return -1;
+    log_line(LOG_NOTICE, "seccomp filter installed.  Please disable seccomp if you encounter problems.");
     return 0;
 }
 
@@ -361,24 +370,25 @@ static void usage(void)
 {
     printf("Collect entropy from a sound card and feed it into the kernel random pool.\n");
     printf("Usage: snd-egd [options]\n\n");
-    printf("--device,       -d []  Sound device used (default %s)\n", DEFAULT_HW_DEVICE);
-    printf("--item,         -i []  Sound device item used (default %s)\n", DEFAULT_HW_ITEM);
-    printf("--sample-rate,  -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
-    printf("--refill-time   -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
-    printf("--skip-bytes,   -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
-    printf("--pid-file,     -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
-    printf("--user          -u []  User name or id to change to after dropping privileges.\n");
-    printf("--group         -g []  Group name or id to change to after dropping privileges.\n");
-    printf("--chroot        -c []  Directory to use as the chroot jail.\n");
-    printf("--nodetach      -n     Do not fork.\n");
-    printf("--verbose,      -v     Be verbose.\n");
-    printf("--help,         -h     This help.\n");
+    printf("--device          -d []  Sound device used (default %s)\n", DEFAULT_HW_DEVICE);
+    printf("--item            -i []  Sound device item used (default %s)\n", DEFAULT_HW_ITEM);
+    printf("--sample-rate     -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
+    printf("--refill-time     -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
+    printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
+    printf("--pid-file        -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
+    printf("--user            -u []  User name or id to change to after dropping privileges.\n");
+    printf("--group           -g []  Group name or id to change to after dropping privileges.\n");
+    printf("--chroot          -c []  Directory to use as the chroot jail.\n");
+    printf("--seccomp-enforce -S     Enforce seccomp syscall filtering.\n");
+    printf("--nodetach        -n     Do not fork.\n");
+    printf("--verbose         -v     Be verbose.\n");
+    printf("--help            -h     This help.\n");
 }
 
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright (c) 2008-2013 Nicholas J. Kain\n"
+    printf("Copyright (c) 2008-2014 Nicholas J. Kain\n"
            "All rights reserved.\n\n"
            "Redistribution and use in source and binary forms, with or without\n"
            "modification, are permitted provided that the following conditions are met:\n\n"
@@ -431,6 +441,7 @@ int main(int argc, char **argv)
         {"user", 1, NULL, 'u'},
         {"group", 1, NULL, 'g'},
         {"chroot", 1, NULL, 'c'},
+        {"seccomp-enforce", 0, NULL, 'S'},
         {"verbose", 0, NULL, 'v'},
         {"help", 0, NULL, 'h'},
         {NULL, 0, NULL, 0 }
@@ -440,7 +451,7 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:nr:s:t:p:u:g:c:vh",
+        c = getopt_long(argc, argv, "d:i:nr:s:t:p:u:g:c:Svh",
                         long_options, NULL);
         if (c == -1)
             break;
@@ -489,6 +500,10 @@ int main(int argc, char **argv)
                 chroot_path = strdup(optarg);
                 break;
 
+            case 'S':
+                use_seccomp = 1;
+                break;
+
             case 'v':
                 gflags_debug = 1;
                 break;
@@ -535,8 +550,10 @@ int main(int argc, char **argv)
     rb_init(&rb);
     vn_buf_lock();
     epoll_init(random_fd);
-    if (enforce_seccomp())
-        log_line(LOG_NOTICE, "seccomp filter cannot be installed");
+    if (use_seccomp) {
+        if (enforce_seccomp())
+            log_line(LOG_NOTICE, "seccomp filter cannot be installed");
+    }
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
