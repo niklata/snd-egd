@@ -380,7 +380,7 @@ static void usage(void)
     printf("--group           -g []  Group name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
     printf("--seccomp-enforce -S     Enforce seccomp syscall filtering.\n");
-    printf("--nodetach        -n     Do not fork.\n");
+    printf("--background      -b     Fork to the background.\n");
     printf("--verbose         -v     Be verbose.\n");
     printf("--help            -h     This help.\n");
 }
@@ -433,7 +433,7 @@ int main(int argc, char **argv)
     struct option long_options[] = {
         {"device",  1, NULL, 'd'},
         {"port", 1, NULL, 'i'},
-        {"nodetach", 1, NULL, 'n'},
+        {"background", 1, NULL, 'b'},
         {"sample-rate", 1, NULL, 'r'},
         {"skip-bytes", 1, NULL, 's'},
         {"refill-time", 1, NULL, 't'},
@@ -451,7 +451,7 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:nr:s:t:p:u:g:c:Svh",
+        c = getopt_long(argc, argv, "d:i:br:s:t:p:u:g:c:Svh",
                         long_options, NULL);
         if (c == -1)
             break;
@@ -465,8 +465,8 @@ int main(int argc, char **argv)
                 sound_set_port(optarg);
                 break;
 
-            case 'n':
-                gflags_detach = 0;
+            case 'b':
+                gflags_detach = 1;
                 break;
 
             case 's':

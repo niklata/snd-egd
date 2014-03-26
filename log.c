@@ -35,7 +35,7 @@
 #include "log.h"
 
 /* global logging flags */
-char gflags_detach = 1;
+char gflags_detach = 0;
 char gflags_debug = 0;
 
 void log_line(int logtype, char *format, ...) {
