@@ -136,7 +136,7 @@ static void exit_cleanup(int signum)
     if (signum)
         log_line("snd-egd stopping due to signal %d", signum);
     print_random_stats();
-    exit(0);
+    exit(EXIT_SUCCESS);
 }
 
 static void signal_dispatch()
@@ -362,7 +362,6 @@ static void usage(void)
     printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
     printf("--pid-file        -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
     printf("--user            -u []  User name or id to change to after dropping privileges.\n");
-    printf("--group           -g []  Group name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
     printf("--seccomp-enforce -S     Enforce seccomp syscall filtering.\n");
     printf("--background      -b     Fork to the background.\n");
@@ -427,7 +426,6 @@ int main(int argc, char **argv)
         {"refill-time", 1, NULL, 't'},
         {"pid-file", 1, NULL, 'p'},
         {"user", 1, NULL, 'u'},
-        {"group", 1, NULL, 'g'},
         {"chroot", 1, NULL, 'c'},
         {"seccomp-enforce", 0, NULL, 'S'},
         {"verbose", 0, NULL, 'v'},
@@ -439,7 +437,7 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:br:s:t:p:u:g:c:Svh",
+        c = getopt_long(argc, argv, "d:i:br:s:t:p:u:c:Svh",
                         long_options, NULL);
         if (c == -1)
             break;
@@ -477,12 +475,9 @@ int main(int argc, char **argv)
                 break;
 
             case 'u':
-                uid = nk_uidgidbyname(optarg, &gid);
+                if (nk_uidgidbyname(optarg, &uid, &gid))
+                    suicide("invalid user '%s' specified", optarg);
                 have_uid = true;
-                break;
-
-            case 'g':
-                gid = nk_gidbyname(optarg);
                 break;
 
             case 'c':
@@ -502,7 +497,7 @@ int main(int argc, char **argv)
             default:
                 copyright();
                 usage();
-                exit(1);
+                exit(EXIT_FAILURE);
         }
     }
 
