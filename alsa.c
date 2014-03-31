@@ -1,5 +1,5 @@
 /*
- * (c) 2008-2012 Nicholas J. Kain <njkain at gmail dot com>
+ * (c) 2008-2014 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,9 +27,8 @@
 
 #include <alsa/asoundlib.h>
 #include <linux/soundcard.h>
-
+#include "nk/log.h"
 #include "defines.h"
-#include "log.h"
 #include "sound.h"
 
 static char *cdevice = DEFAULT_HW_DEVICE;
@@ -107,17 +106,17 @@ void sound_open(void)
         suicide("Could not apply settings to sound device!");
 
     pcm_bytes_per_frame = snd_pcm_frames_to_bytes(pcm_handle, 1);
-    log_line(LOG_DEBUG, "bytes-per-frame: %d", pcm_bytes_per_frame);
+    log_debug("bytes-per-frame: %d", pcm_bytes_per_frame);
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
     for (i = skip_bytes; i > 0; i -= (sizeof buf))
         sound_read(buf, sizeof buf);
-    log_line(LOG_DEBUG, "skipped %d bytes of pcm input", skip_bytes);
+    log_debug("skipped %d bytes of pcm input", skip_bytes);
 
     if (pcm_can_pause) {
         sound_stop();
-        log_line(LOG_DEBUG, "alsa device supports pcm pause");
+        log_debug("alsa device supports pcm pause");
     }
 }
 

@@ -42,14 +42,14 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <grp.h>
-
+#include "nk/log.h"
+#include "nk/pidfile.h"
+#include "nk/privilege.h"
+#include "nk/seccomp-bpf.h"
 #include "defines.h"
-#include "log.h"
-#include "util.h"
 #include "sound.h"
 #include "rb.h"
 #include "getrandom.h"
-#include "seccomp-bpf.h"
 
 static int signalFd;
 
@@ -65,6 +65,7 @@ struct pool_buffer_t {
     char buf[POOL_BUFFER_SIZE];
 };
 
+static char *pidfile_path = DEFAULT_PID_FILE;
 static char *chroot_path;
 static int use_seccomp;
 
@@ -122,7 +123,7 @@ static int enforce_seccomp(void)
         return -1;
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog))
         return -1;
-    log_line(LOG_NOTICE, "seccomp filter installed.  Please disable seccomp if you encounter problems.");
+    log_line("seccomp filter installed.  Please disable seccomp if you encounter problems.");
     return 0;
 }
 
@@ -133,25 +134,9 @@ static void exit_cleanup(int signum)
     unlink(pidfile_path);
     sound_close();
     if (signum)
-        log_line(LOG_NOTICE, "snd-egd stopping due to signal %d", signum);
+        log_line("snd-egd stopping due to signal %d", signum);
     print_random_stats();
     exit(0);
-}
-
-static void drop_privs(int uid, int gid)
-{
-    cap_t caps;
-    prctl(PR_SET_KEEPCAPS, 1);
-    caps = cap_from_text("cap_sys_admin=ep");
-    if (!caps)
-        suicide("cap_from_text failed");
-    if (setgroups(0, NULL) == -1)
-        suicide("setgroups failed");
-    if (setegid(gid) == -1 || seteuid(uid) == -1)
-        suicide("dropping privs failed");
-    if (cap_set_proc(caps) == -1)
-        suicide("cap_set_proc failed");
-    cap_free(caps);
 }
 
 static void signal_dispatch()
@@ -262,8 +247,8 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     if (ioctl(handle, RNDADDENTROPY, poolbuf) == -1)
         suicide("RNDADDENTROPY failed!");
 
-    log_line(LOG_DEBUG, "%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
-             wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
+    log_debug("%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
+              wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
 }
@@ -293,13 +278,13 @@ static void fill_entropy(int random_fd, int max_bits)
 {
     int before, wanted_bits;
 
-    log_line(LOG_DEBUG, "woke up due to low entropy state");
+    log_debug("woke up due to low entropy state");
 
     /* Find out how many bits to add */
     before = random_cur_bits(random_fd);
     wanted_bits = max_bits - before;
-    log_line(LOG_DEBUG, "max_bits: %d, wanted_bits: %d",
-             max_bits, wanted_bits);
+    log_debug("max_bits: %d, wanted_bits: %d",
+              max_bits, wanted_bits);
 
     fill_entropy_amount(random_fd, max_bits, wanted_bits);
 }
@@ -327,7 +312,7 @@ static bool refill_if_timeout(int random_fd, int max_bits, int timeout)
                     curts.tv_nsec - refill_ts.tv_nsec;
     if (secdiff >= timeout || nsecdiff >= (long)timeout * 1000000000L) {
         ts_filled = true;
-        log_line(LOG_DEBUG, "timeout: filling with entropy");
+        log_debug("timeout: filling with entropy");
         fill_entropy_amount(random_fd, max_bits, max_bits);
     }
     refill_ts.tv_sec = curts.tv_sec;
@@ -429,7 +414,10 @@ static void setup_signals()
 
 int main(int argc, char **argv)
 {
-    int c, random_fd = -1, uid = -1, gid = -1;
+    int c, random_fd = -1;
+    uid_t uid;
+    gid_t gid;
+    bool have_uid = false;
     struct option long_options[] = {
         {"device",  1, NULL, 'd'},
         {"port", 1, NULL, 'i'},
@@ -489,11 +477,12 @@ int main(int argc, char **argv)
                 break;
 
             case 'u':
-                uid = parse_user(optarg, &gid);
+                uid = nk_uidgidbyname(optarg, &gid);
+                have_uid = true;
                 break;
 
             case 'g':
-                gid = parse_group(optarg);
+                gid = nk_gidbyname(optarg);
                 break;
 
             case 'c':
@@ -517,7 +506,7 @@ int main(int argc, char **argv)
         }
     }
 
-    log_line(LOG_NOTICE, "snd-egd starting up");
+    log_line("snd-egd starting up");
 
     /* Open kernel random device */
     random_fd = open(RANDOM_DEVICE, O_RDWR);
@@ -527,22 +516,20 @@ int main(int argc, char **argv)
     /* Find out the kernel entropy pool size */
     int max_bits = random_max_bits(random_fd);
 
-    if (gflags_detach)
-        daemonize();
-
+    if (gflags_detach) {
+        if (daemon(0, 0) == -1)
+            suicide("fork failed");
+        write_pid(pidfile_path);
+    }
     setup_signals();
 
     sound_open();
 
-    if (chroot_path) {
-        if (chdir(chroot_path))
-            suicide("chdir chroot failed");
-        if (chroot(chroot_path))
-            suicide("chroot failed");
-    }
-
-    if (uid != -1 && gid != -1)
-        drop_privs(uid, gid);
+    if (chroot_path)
+        nk_set_chroot(chroot_path);
+    nk_set_capability("cap_sys_admin=ep");
+    if (have_uid)
+        nk_set_uidgid(uid, gid);
 
     if (mlockall(MCL_FUTURE))
         suicide("mlockall failed");
@@ -552,7 +539,7 @@ int main(int argc, char **argv)
     epoll_init(random_fd);
     if (use_seccomp) {
         if (enforce_seccomp())
-            log_line(LOG_NOTICE, "seccomp filter cannot be installed");
+            log_warning("seccomp filter cannot be installed");
     }
 
     /* Prefill entropy buffer */

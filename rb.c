@@ -1,5 +1,5 @@
 /*
- * (c) 2010-2012 Nicholas J. Kain <njkain at gmail dot com>
+ * (c) 2010-2014 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "nk/log.h"
 #include "rb.h"
-#include "log.h"
 
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
 unsigned int rb_store_byte(ring_buffer_t *rb, char b)
