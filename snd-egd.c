@@ -522,9 +522,8 @@ int main(int argc, char **argv)
 
     if (chroot_path)
         nk_set_chroot(chroot_path);
-    nk_set_capability("cap_sys_admin=ep");
     if (have_uid)
-        nk_set_uidgid(uid, gid);
+        nk_set_uidgid(uid, gid, "cap_sys_admin=ep");
 
     if (mlockall(MCL_FUTURE))
         suicide("mlockall failed");
