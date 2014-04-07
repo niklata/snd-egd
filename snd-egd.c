@@ -522,8 +522,9 @@ int main(int argc, char **argv)
 
     if (chroot_path)
         nk_set_chroot(chroot_path);
+    unsigned char keepcaps[] = { CAP_SYS_ADMIN };
     if (have_uid)
-        nk_set_uidgid(uid, gid, "cap_sys_admin=ep");
+        nk_set_uidgid(uid, gid, keepcaps, sizeof keepcaps);
 
     if (mlockall(MCL_FUTURE))
         suicide("mlockall failed");
