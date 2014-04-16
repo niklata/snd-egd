@@ -328,7 +328,7 @@ static void main_loop(int random_fd, int max_bits)
 
     for (;;) {
         int ret = epoll_wait(epollfd, events, 2, refill_timeout);
-        if (ret == -1) {
+        if (ret < 0) {
             if (errno == EINTR)
                 continue;
             else
@@ -342,10 +342,13 @@ static void main_loop(int random_fd, int max_bits)
         for (size_t i = 0; i < evmax; ++i) {
             int fd = events[i].data.fd;
             if (fd == signalFd) {
-                signal_dispatch();
+                if (events[i].events & EPOLLIN)
+                    signal_dispatch();
             } else if (fd == random_fd) {
-                if (!ts_filled)
-                    fill_entropy(random_fd, max_bits);
+                if (events[i].events & EPOLLOUT) {
+                    if (!ts_filled)
+                        fill_entropy(random_fd, max_bits);
+                }
             }
         }
     }
