@@ -1,5 +1,5 @@
 /*
- * (c) 2008-2014 Nicholas J. Kain <njkain at gmail dot com>
+ * (c) 2008-2016 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,9 @@
 #include "nk/log.h"
 #include "nk/pidfile.h"
 #include "nk/privilege.h"
+#if defined(__x86_64__) || defined(__i386__)
 #include "nk/seccomp-bpf.h"
+#endif
 #include "defines.h"
 #include "sound.h"
 #include "rb.h"
@@ -69,6 +71,7 @@ static char *pidfile_path = DEFAULT_PID_FILE;
 static char *chroot_path;
 static int use_seccomp;
 
+#if defined(__x86_64__) || defined(__i386__)
 static int enforce_seccomp(void)
 {
     struct sock_filter filter[] = {
@@ -126,6 +129,7 @@ static int enforce_seccomp(void)
     log_line("seccomp filter installed.  Please disable seccomp if you encounter problems.");
     return 0;
 }
+#endif
 
 static void exit_cleanup(int signum)
 {
@@ -366,7 +370,9 @@ static void usage(void)
     printf("--pid-file        -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
     printf("--user            -u []  User name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
+#if defined(__x86_64__) || defined(__i386__)
     printf("--seccomp-enforce -S     Enforce seccomp syscall filtering.\n");
+#endif
     printf("--background      -b     Fork to the background.\n");
     printf("--verbose         -v     Be verbose.\n");
     printf("--help            -h     This help.\n");
@@ -375,7 +381,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright (c) 2008-2014 Nicholas J. Kain\n"
+    printf("Copyright (c) 2008-2016 Nicholas J. Kain\n"
            "All rights reserved.\n\n"
            "Redistribution and use in source and binary forms, with or without\n"
            "modification, are permitted provided that the following conditions are met:\n\n"
@@ -430,7 +436,9 @@ int main(int argc, char **argv)
         {"pid-file", 1, NULL, 'p'},
         {"user", 1, NULL, 'u'},
         {"chroot", 1, NULL, 'c'},
+#if defined(__x86_64__) || defined(__i386__)
         {"seccomp-enforce", 0, NULL, 'S'},
+#endif
         {"verbose", 0, NULL, 'v'},
         {"help", 0, NULL, 'h'},
         {NULL, 0, NULL, 0 }
@@ -535,10 +543,12 @@ int main(int argc, char **argv)
     rb_init(&rb);
     vn_buf_lock();
     epoll_init(random_fd);
+#if defined(__x86_64__) || defined(__i386__)
     if (use_seccomp) {
         if (enforce_seccomp())
             log_warning("seccomp filter cannot be installed");
     }
+#endif
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
