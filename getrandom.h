@@ -33,9 +33,8 @@
  * Frames are 32-bits in length with 16-bits per channel, and each channel
  * word stored in sequence.
  */
-union frame_t {
+struct frame_t {
     int16_t channel[2];
-    int32_t frame;
 };
 
 typedef struct {

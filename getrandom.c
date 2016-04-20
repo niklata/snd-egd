@@ -34,7 +34,7 @@
 extern ring_buffer_t rb;
 
 /* Global for speed... */
-static union frame_t vnbuf[PAGE_SIZE / sizeof(union frame_t)];
+static struct frame_t vnbuf[PAGE_SIZE / sizeof(struct frame_t)];
 static vn_renorm_state_t vnstate[2];
 static unsigned int stats[2][16][256];
 
