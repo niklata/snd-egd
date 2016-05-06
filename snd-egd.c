@@ -67,9 +67,10 @@ struct pool_buffer_t {
     char buf[POOL_BUFFER_SIZE];
 };
 
-static char *pidfile_path = DEFAULT_PID_FILE;
+static char *pidfile_path;
 static char *chroot_path;
 static int use_seccomp;
+static bool write_pid_enabled = false;
 
 #if defined(__x86_64__) || defined(__i386__)
 static int enforce_seccomp(void)
@@ -135,7 +136,8 @@ static void exit_cleanup(int signum)
 {
     if (munlockall() == -1)
         suicide("problem unlocking pages");
-    unlink(pidfile_path);
+    if (write_pid_enabled)
+        unlink(pidfile_path);
     sound_close();
     if (signum)
         log_line("snd-egd stopping due to signal %d", signum);
@@ -367,7 +369,7 @@ static void usage(void)
     printf("--sample-rate     -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
     printf("--refill-time     -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
     printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
-    printf("--pid-file        -p []  PID file path (default %s)\n", DEFAULT_PID_FILE);
+    printf("--pid-file        -p []  PID file path (no default)\n");
     printf("--user            -u []  User name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
 #if defined(__x86_64__) || defined(__i386__)
@@ -482,6 +484,7 @@ int main(int argc, char **argv)
                 break;
 
             case 'p':
+                write_pid_enabled = true;
                 pidfile_path = strdup(optarg);
                 break;
 
@@ -525,7 +528,8 @@ int main(int argc, char **argv)
     if (gflags_detach) {
         if (daemon(0, 0) == -1)
             suicide("fork failed");
-        write_pid(pidfile_path);
+        if (write_pid_enabled)
+            write_pid(pidfile_path);
     }
     setup_signals();
 
