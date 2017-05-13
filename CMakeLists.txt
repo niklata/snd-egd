@@ -6,7 +6,7 @@ find_package(ALSA)
 link_directories(${ALSA_LIBRARIES})
 include_directories(${ALSA_INCLUDE_DIRS})
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -std=gnu99 -fno-strict-overflow -pedantic -Wall -Wextra -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -lm")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -std=gnu99 -fno-strict-overflow -pedantic -Wall -Wextra -Wimplicit-fallthrough=0 -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -lm")
 
 if (WIN32)
   set(OSNAME "Win32")
