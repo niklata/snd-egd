@@ -133,9 +133,9 @@ and snd-egd can restrict itself to a chroot.
 
 ## Downloads
 
-* [GitLab](https://github.com/niklata/snd-egd)
-* [BitBucket](https://gitlab.com/niklata/snd-egd)
-* [GitHub](https://bitbucket.com/niklata/snd-egd)
+* [GitLab](https://gitlab.com/niklata/snd-egd)
+* [BitBucket](https://bitbucket.com/niklata/snd-egd)
+* [GitHub](https://github.com/niklata/snd-egd)
 
 ## Possible Improvements
 
