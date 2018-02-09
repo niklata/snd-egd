@@ -45,9 +45,6 @@
 #include "nk/log.h"
 #include "nk/pidfile.h"
 #include "nk/privilege.h"
-#if defined(__x86_64__) || defined(__i386__)
-#include "nk/seccomp-bpf.h"
-#endif
 #include "defines.h"
 #include "sound.h"
 #include "rb.h"
@@ -69,68 +66,7 @@ struct pool_buffer_t {
 
 static char *pidfile_path;
 static char *chroot_path;
-static int use_seccomp;
 static bool write_pid_enabled = false;
-
-#if defined(__x86_64__) || defined(__i386__)
-static int enforce_seccomp(void)
-{
-    struct sock_filter filter[] = {
-        VALIDATE_ARCHITECTURE,
-        EXAMINE_SYSCALL,
-        ALLOW_SYSCALL(epoll_wait),
-        ALLOW_SYSCALL(read),
-        ALLOW_SYSCALL(write),
-        ALLOW_SYSCALL(clock_gettime),
-        ALLOW_SYSCALL(close),
-        ALLOW_SYSCALL(ioctl),
-
-#if defined(__x86_64__) || (defined(__arm__) && defined(__ARM_EABI__))
-        // for glibc syslog
-        ALLOW_SYSCALL(sendto),
-        ALLOW_SYSCALL(socket),
-        ALLOW_SYSCALL(connect),
-        ALLOW_SYSCALL(recvmsg),
-        ALLOW_SYSCALL(getsockname),
-#elif defined(__i386__)
-        ALLOW_SYSCALL(socketcall),
-#else
-#error Target platform does not support seccomp-filter.
-#endif
-
-        ALLOW_SYSCALL(open),
-        ALLOW_SYSCALL(fstat),
-
-        ALLOW_SYSCALL(munlockall),
-        ALLOW_SYSCALL(unlink),
-        ALLOW_SYSCALL(munmap),
-
-        ALLOW_SYSCALL(rt_sigreturn),
-#ifdef __NR_sigreturn
-        ALLOW_SYSCALL(sigreturn),
-#endif
-        // Allowed by vDSO
-        ALLOW_SYSCALL(getcpu),
-        ALLOW_SYSCALL(time),
-        ALLOW_SYSCALL(gettimeofday),
-        ALLOW_SYSCALL(clock_gettime),
-
-        ALLOW_SYSCALL(exit_group),
-        ALLOW_SYSCALL(exit),
-        KILL_PROCESS,
-    };
-    struct sock_fprog prog = {
-        .len = (unsigned short)(sizeof filter / sizeof filter[0]),
-        .filter = filter,
-    };
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
-        return -1;
-    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog))
-        return -1;
-    log_line("seccomp filter installed.  Please disable seccomp if you encounter problems.");
-    return 0;
-}
-#endif
 
 static void exit_cleanup(int signum)
 {
@@ -372,9 +308,6 @@ static void usage(void)
     printf("--pid-file        -p []  PID file path (no default)\n");
     printf("--user            -u []  User name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
-#if defined(__x86_64__) || defined(__i386__)
-    printf("--seccomp-enforce -S     Enforce seccomp syscall filtering.\n");
-#endif
     printf("--background      -b     Fork to the background.\n");
     printf("--verbose         -v     Be verbose.\n");
     printf("--help            -h     This help.\n");
@@ -438,9 +371,6 @@ int main(int argc, char **argv)
         {"pid-file", 1, NULL, 'p'},
         {"user", 1, NULL, 'u'},
         {"chroot", 1, NULL, 'c'},
-#if defined(__x86_64__) || defined(__i386__)
-        {"seccomp-enforce", 0, NULL, 'S'},
-#endif
         {"verbose", 0, NULL, 'v'},
         {"help", 0, NULL, 'h'},
         {NULL, 0, NULL, 0 }
@@ -498,10 +428,6 @@ int main(int argc, char **argv)
                 chroot_path = strdup(optarg);
                 break;
 
-            case 'S':
-                use_seccomp = 1;
-                break;
-
             case 'v':
                 gflags_debug = 1;
                 break;
@@ -547,12 +473,6 @@ int main(int argc, char **argv)
     rb_init(&rb);
     vn_buf_lock();
     epoll_init(random_fd);
-#if defined(__x86_64__) || defined(__i386__)
-    if (use_seccomp) {
-        if (enforce_seccomp())
-            log_warning("seccomp filter cannot be installed");
-    }
-#endif
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
