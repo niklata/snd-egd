@@ -43,7 +43,7 @@ static int pcm_can_pause;
 void sound_open(void)
 {
     char buf[PAGE_SIZE];
-    int err, i;
+    int err;
     snd_pcm_hw_params_t *ct_params;
 
     if ((err = snd_pcm_open(&pcm_handle, cdevice, SND_PCM_STREAM_CAPTURE, 0)) < 0)
@@ -105,12 +105,16 @@ void sound_open(void)
     if (err < 0)
         suicide("Could not apply settings to sound device!");
 
-    pcm_bytes_per_frame = snd_pcm_frames_to_bytes(pcm_handle, 1);
+    ssize_t tbpf = snd_pcm_frames_to_bytes(pcm_handle, 1);
+    if (tbpf > 0)
+        pcm_bytes_per_frame = (size_t)tbpf;
+    else
+        suicide("pcm_bytes_per_frame would be zero or negative!");
     log_debug("bytes-per-frame: %d", pcm_bytes_per_frame);
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
-    for (i = skip_bytes; i > 0; i -= (sizeof buf))
+    for (size_t i = skip_bytes; i > 0; i -= (sizeof buf))
         sound_read(buf, sizeof buf);
     log_debug("skipped %d bytes of pcm input", skip_bytes);
 
@@ -120,12 +124,12 @@ void sound_open(void)
     }
 }
 
-int sound_bytes_per_frame(void)
+size_t sound_bytes_per_frame(void)
 {
     return pcm_bytes_per_frame;
 }
 
-int sound_read(void *buf, size_t size)
+unsigned sound_read(void *buf, size_t size)
 {
     snd_pcm_sframes_t fr;
 
@@ -136,7 +140,7 @@ int sound_read(void *buf, size_t size)
     /* Nope, something else is wrong. Bail. */
     if (fr < 0 || (fr == -1 && errno != EINTR))
         suicide("get_random_data(): Read error: %m");
-    return fr;
+    return (unsigned)fr;
 }
 
 void sound_start(void)
@@ -184,7 +188,7 @@ void sound_set_port(char *str)
 void sound_set_sample_rate(int rate)
 {
     if (rate > 0)
-        sample_rate = rate;
+        sample_rate = (unsigned)rate;
     else
         sample_rate = DEFAULT_SAMPLE_RATE;
 }
@@ -192,7 +196,7 @@ void sound_set_sample_rate(int rate)
 void sound_set_skip_bytes(int sb)
 {
     if (sb > 0)
-        skip_bytes = sb;
+        skip_bytes = (unsigned)sb;
     else
         skip_bytes = DEFAULT_SKIP_BYTES;
 }

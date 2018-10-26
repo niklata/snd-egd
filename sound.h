@@ -28,8 +28,8 @@
  */
 
 void sound_open(void);
-int sound_bytes_per_frame(void);
-int sound_read(void *buf, size_t size);
+size_t sound_bytes_per_frame(void);
+unsigned sound_read(void *buf, size_t size);
 void sound_start(void);
 void sound_stop(void);
 void sound_close(void);

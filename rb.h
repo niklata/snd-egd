@@ -78,7 +78,7 @@ static inline int rb_is_full(ring_buffer_t *rb)
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
 unsigned int rb_store_byte(ring_buffer_t *rb, char b);
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
-unsigned int rb_store_byte_xor(ring_buffer_t *rb, char b);
+unsigned int rb_store_byte_xor(ring_buffer_t *rb, unsigned char b);
 /* returns 0 on success, a negative number if not enough bytes or error */
 int rb_move(ring_buffer_t *rb, char *buf, unsigned int bytes);
 

@@ -33,6 +33,8 @@
 #include <fcntl.h>
 #include <time.h>
 #include <errno.h>
+#include <limits.h>
+#include <assert.h>
 #include <linux/random.h>
 #include <sys/epoll.h>
 #include <sys/signalfd.h>
@@ -68,7 +70,7 @@ static char *pidfile_path;
 static char *chroot_path;
 static bool write_pid_enabled = false;
 
-static void exit_cleanup(int signum)
+static void exit_cleanup(uint32_t signum)
 {
     if (munlockall() == -1)
         suicide("problem unlocking pages");
@@ -83,7 +85,8 @@ static void exit_cleanup(int signum)
 
 static void signal_dispatch()
 {
-    int t, off = 0;
+    size_t off = 0;
+    int t;
     struct signalfd_siginfo si;
   again:
     t = read(signalFd, (char *)&si + off, sizeof si - off);
@@ -93,8 +96,9 @@ static void signal_dispatch()
         else
             suicide("signalfd read error");
     }
-    if ((size_t)(t > 0 ? t : 0) < sizeof si - off)
-        off += t;
+    assert(t >= 0);
+    if ((size_t)t < sizeof si - off)
+        off += (size_t)t;
     switch (si.ssi_signo) {
         case SIGHUP:
         case SIGINT:
@@ -130,7 +134,7 @@ static void epoll_init(int random_fd)
         suicide("epoll_ctl failed");
 }
 
-static int random_max_bits()
+static unsigned random_max_bits()
 {
     int ret, fd;
     char buf[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -148,16 +152,15 @@ static int random_max_bits()
         suicide("poolsize can never be less than 1");
     }
     close(fd);
-    return ret;
+    return (unsigned)ret;
 }
 
-static int random_cur_bits(int random_fd)
+static unsigned random_cur_bits(int random_fd)
 {
     int ret;
-
     if (ioctl(random_fd, RNDGETENTCNT, &ret) == -1)
         suicide("Couldn't query entropy-level from kernel");
-    return ret;
+    return (unsigned)MAX(ret, 0);
 }
 
 /*
@@ -166,7 +169,7 @@ static int random_cur_bits(int random_fd)
  * @return number of bits that were loaded to the KRNG
  */
 static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
-                                int wanted_bits)
+                                unsigned wanted_bits)
 {
     unsigned int total_cur_bytes;
     unsigned int wanted_bytes;
@@ -181,8 +184,8 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
         wanted_bytes = total_cur_bytes;
 
     wanted_bytes = MIN(wanted_bytes, POOL_BUFFER_SIZE);
-    poolbuf->info.entropy_count = wanted_bytes * 8;
-    poolbuf->info.buf_size = wanted_bytes;
+    poolbuf->info.entropy_count = (int)MIN(wanted_bytes * 8, (unsigned)INT_MAX);
+    poolbuf->info.buf_size = (int)MIN(wanted_bytes, (unsigned)INT_MAX);
     if (rb_move(&rb, poolbuf->buf, wanted_bytes) == -1)
         suicide("rb_move() failed");
 
@@ -195,9 +198,8 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     return wanted_bytes * 8;
 }
 
-static void fill_entropy_amount(int random_fd, int max_bits, int wanted_bits)
+static void fill_entropy_amount(int random_fd, unsigned max_bits, unsigned wanted_bits)
 {
-    int i;
     struct pool_buffer_t poolbuf;
 
     if (wanted_bits > max_bits)
@@ -209,24 +211,23 @@ static void fill_entropy_amount(int random_fd, int max_bits, int wanted_bits)
      * might cause snd-egd to run constantly if there are
      * a lot of bytes being consumed from the random device.
      */
-    for (i = 0; i < wanted_bits;)
+    for (unsigned i = 0; i < wanted_bits;)
         i += add_entropy(&poolbuf, random_fd, wanted_bits - i);
 
     if (rb.bytes < sizeof rb.buf / 4)
         get_random_data(rb.size - rb.bytes);
 }
 
-static void fill_entropy(int random_fd, int max_bits)
+static void fill_entropy(int random_fd, unsigned max_bits)
 {
-    int before, wanted_bits;
-
     log_debug("woke up due to low entropy state");
 
     /* Find out how many bits to add */
-    before = random_cur_bits(random_fd);
-    wanted_bits = max_bits - before;
-    log_debug("max_bits: %d, wanted_bits: %d",
-              max_bits, wanted_bits);
+    unsigned before = random_cur_bits(random_fd);
+    if (max_bits <= before) return;
+
+    unsigned wanted_bits = max_bits - before;
+    log_debug("max_bits: %u, wanted_bits: %u", max_bits, wanted_bits);
 
     fill_entropy_amount(random_fd, max_bits, wanted_bits);
 }
@@ -238,7 +239,7 @@ static void refill_timeout_set(int timeout)
         refill_timeout = -1;
 }
 
-static bool refill_if_timeout(int random_fd, int max_bits, int timeout)
+static bool refill_if_timeout(int random_fd, unsigned max_bits, int timeout)
 {
     static struct timespec refill_ts;
     struct timespec curts;
@@ -263,7 +264,7 @@ out:
     return ts_filled;
 }
 
-static void main_loop(int random_fd, int max_bits)
+static void main_loop(int random_fd, unsigned max_bits)
 {
     /* Fill up the buffer and refresh any timeout. */
     refill_if_timeout(random_fd, max_bits, 0);
@@ -280,7 +281,7 @@ static void main_loop(int random_fd, int max_bits)
         bool ts_filled = refill_if_timeout(random_fd, max_bits,
                                            refill_timeout);
 
-        size_t evmax = ret > 0 ? ret : 0;
+        size_t evmax = (size_t)MAX(ret, 0);
         for (size_t i = 0; i < evmax; ++i) {
             int fd = events[i].data.fd;
             if (fd == signalFd) {
@@ -449,7 +450,7 @@ int main(int argc, char **argv)
         suicide("Couldn't open random device: %m");
 
     /* Find out the kernel entropy pool size */
-    int max_bits = random_max_bits(random_fd);
+    unsigned max_bits = random_max_bits(random_fd);
 
     if (gflags_detach) {
         if (daemon(0, 0) == -1)

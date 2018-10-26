@@ -38,7 +38,7 @@ struct frame_t {
 };
 
 typedef struct {
-    int total_out;
+    unsigned int total_out;
     int bits_out[16];
     char prev_bits[16];
     unsigned char byte_out[16];
@@ -51,6 +51,6 @@ typedef struct {
 
 void vn_buf_lock(void);
 void print_random_stats(void);
-void get_random_data(int target);
+void get_random_data(unsigned target);
 
 #endif /* GETRANDOM_H_ */

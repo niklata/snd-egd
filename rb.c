@@ -66,7 +66,7 @@ unsigned int rb_store_byte(ring_buffer_t *rb, char b)
 }
 
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
-unsigned int rb_store_byte_xor(ring_buffer_t *rb, char b)
+unsigned int rb_store_byte_xor(ring_buffer_t *rb, unsigned char b)
 {
     if (!rb)
         return 0;
