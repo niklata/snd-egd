@@ -348,7 +348,7 @@ static void setup_signals()
     sigaddset(&mask, SIGTERM);
     sigaddset(&mask, SIGUSR1);
     sigaddset(&mask, SIGUSR2);
-    if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0)
+    if (sigprocmask(SIG_BLOCK, &mask, (sigset_t *)0) < 0)
         suicide("sigprocmask failed");
     signalFd = signalfd(-1, &mask, SFD_NONBLOCK);
     if (signalFd < 0)
@@ -362,18 +362,18 @@ int main(int argc, char **argv)
     gid_t gid;
     bool have_uid = false;
     struct option long_options[] = {
-        {"device",  1, NULL, 'd'},
-        {"port", 1, NULL, 'i'},
-        {"background", 1, NULL, 'b'},
-        {"sample-rate", 1, NULL, 'r'},
-        {"skip-bytes", 1, NULL, 's'},
-        {"refill-time", 1, NULL, 't'},
-        {"pid-file", 1, NULL, 'p'},
-        {"user", 1, NULL, 'u'},
-        {"chroot", 1, NULL, 'c'},
-        {"verbose", 0, NULL, 'v'},
-        {"help", 0, NULL, 'h'},
-        {NULL, 0, NULL, 0 }
+        {"device",  1, (int *)0, 'd'},
+        {"port", 1, (int *)0, 'i'},
+        {"background", 1, (int *)0, 'b'},
+        {"sample-rate", 1, (int *)0, 'r'},
+        {"skip-bytes", 1, (int *)0, 's'},
+        {"refill-time", 1, (int *)0, 't'},
+        {"pid-file", 1, (int *)0, 'p'},
+        {"user", 1, (int *)0, 'u'},
+        {"chroot", 1, (int *)0, 'c'},
+        {"verbose", 0, (int *)0, 'v'},
+        {"help", 0, (int *)0, 'h'},
+        {(const char *)0, 0, (int *)0, 0 }
     };
 
     /* Process commandline options */
@@ -381,7 +381,7 @@ int main(int argc, char **argv)
         int t;
 
         c = getopt_long(argc, argv, "d:i:br:s:t:p:u:c:Svh",
-                        long_options, NULL);
+                        long_options, (int *)0);
         if (c == -1)
             break;
 

@@ -34,7 +34,7 @@
 static char *cdevice = DEFAULT_HW_DEVICE;
 static const char *cdev_id = DEFAULT_HW_ITEM;
 static unsigned int sample_rate = DEFAULT_SAMPLE_RATE;
-static snd_pcm_t *pcm_handle = NULL;
+static snd_pcm_t *pcm_handle = 0;
 static size_t pcm_bytes_per_frame;
 static int snd_format = -1;
 static unsigned int skip_bytes = DEFAULT_SKIP_BYTES;
@@ -154,7 +154,7 @@ void sound_stop(void)
 void sound_close(void)
 {
     snd_pcm_close(pcm_handle);
-    pcm_handle = NULL;
+    pcm_handle = (snd_pcm_t *)0;
 }
 
 int sound_is_le(void)
