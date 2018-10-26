@@ -1,7 +1,7 @@
 #ifndef NJK_DEFINES_H_
 #define NJK_DEFINES_H_ 1
 /*
- * (c) 2008-2012 Nicholas J. Kain <njkain at gmail dot com>
+ * Copyright 2008-2012 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

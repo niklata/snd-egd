@@ -1,6 +1,6 @@
 # snd-egd
 
-Copyright (C) 2008-2017 Nicholas J. Kain
+Copyright 2008-2017 Nicholas J. Kain
 
 License: Two-clause BSD.
 

@@ -1,5 +1,5 @@
 /*
- * (c) 2008-2016 Nicholas J. Kain <njkain at gmail dot com>
+ * Copyright 2008-2016 Nicholas J. Kain <njkain at gmail dot com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -316,7 +316,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright (c) 2008-2016 Nicholas J. Kain\n"
+    printf("Copyright 2008-2016 Nicholas J. Kain\n"
            "All rights reserved.\n\n"
            "Redistribution and use in source and binary forms, with or without\n"
            "modification, are permitted provided that the following conditions are met:\n\n"
