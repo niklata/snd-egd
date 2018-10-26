@@ -1,12 +1,16 @@
-project (sndegd)
+cmake_minimum_required(VERSION 3.3)
+if(${CMAKE_VERSION} VERSION_LESS 3.12)
+  cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
+else()
+  cmake_policy(VERSION 3.12)
+endif()
 
-cmake_minimum_required (VERSION 2.6)
+project(snd-egd DESCRIPTION "gathers entropy from sound device and feeds to /dev/random"
+                LANGUAGES C)
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fno-strict-overflow -pedantic -Wall -Wextra -Wimplicit-fallthrough=0 -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -Wsign-conversion -DNK_USE_CAPABILITY")
 
 find_package(ALSA)
-link_directories(${ALSA_LIBRARIES})
-include_directories(${ALSA_INCLUDE_DIRS})
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s -std=gnu99 -fno-strict-overflow -pedantic -Wall -Wextra -Wimplicit-fallthrough=0 -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -lm")
 
 if (WIN32)
   set(OSNAME "Win32")
@@ -24,12 +28,14 @@ if (NOT (${OSNAME} STREQUAL "Linux"))
   return()
 endif()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DNK_USE_CAPABILITY")
-
-include_directories("${PROJECT_SOURCE_DIR}/ncmlib")
 add_subdirectory(ncmlib)
 
-file(GLOB SNDEGD_SRCS "*.c")
-
-add_executable(snd-egd ${SNDEGD_SRCS})
-target_link_libraries(snd-egd ncmlib ${ALSA_LIBRARIES})
+add_executable(snd-egd)
+target_sources(snd-egd PRIVATE
+  "alsa.c"
+  "getrandom.c"
+  "rb.c"
+  "snd-egd.c"
+)
+target_include_directories(snd-egd PRIVATE "${PROJECT_SOURCE_DIR}/ncmlib" ${ALSA_INCLUDE_DIRS})
+target_link_libraries(snd-egd PUBLIC ncmlib ${ALSA_LIBRARIES})
