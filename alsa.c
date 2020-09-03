@@ -114,9 +114,10 @@ void sound_open(void)
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
-    for (size_t i = skip_bytes; i > 0; i -= (sizeof buf))
-        sound_read(buf, sizeof buf);
-    log_debug("skipped %d bytes of pcm input", skip_bytes);
+    size_t got_bytes = 0;
+    while (got_bytes < skip_bytes)
+        got_bytes += sound_read(buf, sizeof buf);
+    log_line("discarded first %d bytes of pcm input", got_bytes);
 
     if (pcm_can_pause) {
         sound_stop();
