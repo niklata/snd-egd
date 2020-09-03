@@ -66,16 +66,12 @@ struct pool_buffer_t {
     char buf[POOL_BUFFER_SIZE];
 };
 
-static char *pidfile_path;
 static char *chroot_path;
-static bool write_pid_enabled = false;
 
 static void exit_cleanup(uint32_t signum)
 {
     if (munlockall() == -1)
         suicide("problem unlocking pages");
-    if (write_pid_enabled)
-        unlink(pidfile_path);
     sound_close();
     if (signum)
         log_line("snd-egd stopping due to signal %d", signum);
@@ -306,10 +302,8 @@ static void usage(void)
     printf("--sample-rate     -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
     printf("--refill-time     -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
     printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
-    printf("--pid-file        -p []  PID file path (no default)\n");
     printf("--user            -u []  User name or id to change to after dropping privileges.\n");
     printf("--chroot          -c []  Directory to use as the chroot jail.\n");
-    printf("--background      -b     Fork to the background.\n");
     printf("--verbose         -v     Be verbose.\n");
     printf("--help            -h     This help.\n");
 }
@@ -317,7 +311,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright 2008-2016 Nicholas J. Kain\n"
+    printf("Copyright 2008-2020 Nicholas J. Kain\n"
            "All rights reserved.\n\n"
            "Redistribution and use in source and binary forms, with or without\n"
            "modification, are permitted provided that the following conditions are met:\n\n"
@@ -381,7 +375,7 @@ int main(int argc, char **argv)
     while (1) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:br:s:t:p:u:c:Svh",
+        c = getopt_long(argc, argv, "d:i:r:s:t:u:c:Svh",
                         long_options, (int *)0);
         if (c == -1)
             break;
@@ -393,10 +387,6 @@ int main(int argc, char **argv)
 
             case 'i':
                 sound_set_port(optarg);
-                break;
-
-            case 'b':
-                gflags_detach = 1;
                 break;
 
             case 's':
@@ -412,11 +402,6 @@ int main(int argc, char **argv)
             case 't':
                 t = atoi(optarg);
                 refill_timeout_set(t);
-                break;
-
-            case 'p':
-                write_pid_enabled = true;
-                pidfile_path = strdup(optarg);
                 break;
 
             case 'u':
@@ -452,12 +437,6 @@ int main(int argc, char **argv)
     /* Find out the kernel entropy pool size */
     unsigned max_bits = random_max_bits(random_fd);
 
-    if (gflags_detach) {
-        if (daemon(0, 0) == -1)
-            suicide("fork failed");
-        if (write_pid_enabled)
-            write_pid(pidfile_path);
-    }
     setup_signals();
 
     sound_open();
