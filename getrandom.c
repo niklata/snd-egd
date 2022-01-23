@@ -26,12 +26,14 @@
  */
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include "nk/log.h"
 #include "rb.h"
 #include "sound.h"
 #include "getrandom.h"
 
 extern ring_buffer_t rb;
+extern bool gflags_debug;
 
 /* Global for speed... */
 static struct frame_t vnbuf[PAGE_SIZE / sizeof(struct frame_t)];
@@ -46,44 +48,44 @@ void vn_buf_lock(void)
 
 void print_random_stats(void)
 {
-    log_debug("LEFT sampled random character counts:");
-    log_debug("byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8");
+    if (gflags_debug) log_line("LEFT sampled random character counts:");
+    if (gflags_debug) log_line("byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8");
     for (size_t i = 0; i < 256; ++i) {
-        log_debug("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
+        if (gflags_debug) log_line("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
                   stats[0][0][i], stats[0][1][i], stats[0][2][i],
                   stats[0][3][i], stats[0][4][i], stats[0][5][i],
                   stats[0][6][i], stats[0][7][i]);
     }
-    log_debug("byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
+    if (gflags_debug) log_line("byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
     for (size_t i = 0; i < 256; ++i) {
-        log_debug("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
+        if (gflags_debug) log_line("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
                   stats[0][8][i], stats[0][9][i], stats[0][10][i],
                   stats[0][11][i], stats[0][12][i], stats[0][13][i],
                   stats[0][14][i], stats[0][15][i]);
     }
-    log_debug("RIGHT sampled random character counts:");
-    log_debug("byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8\t");
+    if (gflags_debug) log_line("RIGHT sampled random character counts:");
+    if (gflags_debug) log_line("byte:\t 1\t 2\t 3\t 4\t 5\t 6\t 7\t 8\t");
     for (size_t i = 0; i < 256; ++i) {
-        log_debug("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
+        if (gflags_debug) log_line("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
                   stats[1][0][i], stats[1][1][i], stats[1][2][i],
                   stats[1][3][i], stats[1][4][i], stats[1][5][i],
                   stats[1][6][i], stats[1][7][i]);
     }
-    log_debug("byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
+    if (gflags_debug) log_line("byte:\t 9\t 10\t 11\t 12\t 13\t 14\t 15\t 16");
     for (size_t i = 0; i < 256; ++i) {
-        log_debug("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
+        if (gflags_debug) log_line("%zu:\t %u\t %u\t %u\t %u\t %u\t %u\t %u\t %u", i,
                   stats[1][8][i], stats[1][9][i], stats[1][10][i],
                   stats[1][11][i], stats[1][12][i], stats[1][13][i],
                   stats[1][14][i], stats[1][15][i]);
     }
-    log_debug("total random character counts:");
+    if (gflags_debug) log_line("total random character counts:");
     for (size_t i = 0; i < 256; ++i) {
         unsigned outl = 0, outr = 0;
         for (int j = 0; j < 16; ++j) {
             outl += stats[0][j][i];
             outr += stats[1][j][i];
         }
-        log_debug("%zu:\t %u\t %u", i, outl, outr);
+        if (gflags_debug) log_line("%zu:\t %u\t %u", i, outl, outr);
     }
 }
 
@@ -220,7 +222,7 @@ void get_random_data(unsigned target)
     size_t total_in = 0, framesize = 0, total_out = 0, frames = 0;
     vn_renorm_init();
 
-    log_debug("get_random_data(%u)", target);
+    if (gflags_debug) log_line("get_random_data(%u)", target);
 
     target = MIN(sizeof vnbuf, target);
 
@@ -228,7 +230,7 @@ void get_random_data(unsigned target)
     while (total_out < target) {
         frames = sound_read(vnbuf, target);
         framesize = sound_bytes_per_frame();
-        log_debug("frames = %zu", frames);
+        if (gflags_debug) log_line("frames = %zu", frames);
 
         frames = buf_to_deltabuf(frames);
 
@@ -246,6 +248,6 @@ void get_random_data(unsigned target)
     }
     sound_stop();
 
-    log_debug("get_random_data(): in->out bytes = %zu->%zu, eff = %f",
+    if (gflags_debug) log_line("get_random_data(): in->out bytes = %zu->%zu, eff = %f",
               total_in, total_out, (float)total_out / (float)total_in);
 }

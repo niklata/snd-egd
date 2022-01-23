@@ -25,11 +25,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdbool.h>
 #include <alsa/asoundlib.h>
 #include <linux/soundcard.h>
 #include "nk/log.h"
 #include "defines.h"
 #include "sound.h"
+
+extern bool gflags_debug;
 
 static char *cdevice = DEFAULT_HW_DEVICE;
 static const char *cdev_id = DEFAULT_HW_ITEM;
@@ -110,18 +113,18 @@ void sound_open(void)
         pcm_bytes_per_frame = (size_t)tbpf;
     else
         suicide("pcm_bytes_per_frame would be zero or negative!");
-    log_debug("bytes-per-frame: %d", pcm_bytes_per_frame);
+    if (gflags_debug) log_line("bytes-per-frame: %zu", pcm_bytes_per_frame);
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
     size_t got_bytes = 0;
     while (got_bytes < skip_bytes)
         got_bytes += sound_read(buf, sizeof buf);
-    log_line("discarded first %d bytes of pcm input", got_bytes);
+    log_line("discarded first %zu bytes of pcm input", got_bytes);
 
     if (pcm_can_pause) {
         sound_stop();
-        log_debug("alsa device supports pcm pause");
+        if (gflags_debug) log_line("alsa device supports pcm pause");
     }
 }
 
@@ -140,7 +143,7 @@ unsigned sound_read(void *buf, size_t size)
         fr = snd_pcm_recover(pcm_handle, fr, 0);
     /* Nope, something else is wrong. Bail. */
     if (fr < 0 || (fr == -1 && errno != EINTR))
-        suicide("get_random_data(): Read error: %m");
+        suicide("get_random_data(): Read error: %s", strerror(errno));
     return (unsigned)fr;
 }
 

@@ -45,8 +45,7 @@
 #include <sys/wait.h>
 #include <grp.h>
 #include "nk/log.h"
-#include "nk/pidfile.h"
-#include "nk/privilege.h"
+#include "nk/privs.h"
 #include "defines.h"
 #include "sound.h"
 #include "rb.h"
@@ -56,6 +55,8 @@ static int signalFd;
 
 static int epollfd;
 static struct epoll_event events[2];
+
+bool gflags_debug = 0;
 
 ring_buffer_t rb;
 
@@ -109,6 +110,7 @@ static void signal_dispatch()
             break;
         case SIGUSR2:
             gflags_debug = !gflags_debug;
+        default:
             break;
     }
 }
@@ -188,7 +190,7 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     if (ioctl(handle, RNDADDENTROPY, poolbuf) == -1)
         suicide("RNDADDENTROPY failed!");
 
-    log_debug("%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
+    if (gflags_debug) log_line("%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
               wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
@@ -216,14 +218,14 @@ static void fill_entropy_amount(int random_fd, unsigned max_bits, unsigned wante
 
 static void fill_entropy(int random_fd, unsigned max_bits)
 {
-    log_debug("woke up due to low entropy state");
+    if (gflags_debug) log_line("woke up due to low entropy state");
 
     /* Find out how many bits to add */
     unsigned before = random_cur_bits(random_fd);
     if (max_bits <= before) return;
 
     unsigned wanted_bits = max_bits - before;
-    log_debug("max_bits: %u, wanted_bits: %u", max_bits, wanted_bits);
+    if (gflags_debug) log_line("max_bits: %u, wanted_bits: %u", max_bits, wanted_bits);
 
     fill_entropy_amount(random_fd, max_bits, wanted_bits);
 }
@@ -251,7 +253,7 @@ static bool refill_if_timeout(int random_fd, unsigned max_bits, int timeout)
                     curts.tv_nsec - refill_ts.tv_nsec;
     if (secdiff >= timeout || nsecdiff >= (long)timeout * 1000000000L) {
         ts_filled = true;
-        log_debug("timeout: filling with entropy");
+        if (gflags_debug) log_line("timeout: filling with entropy");
         fill_entropy_amount(random_fd, max_bits, max_bits);
     }
     refill_ts.tv_sec = curts.tv_sec;
@@ -342,7 +344,6 @@ static void setup_signals()
     sigaddset(&mask, SIGINT);
     sigaddset(&mask, SIGTERM);
     sigaddset(&mask, SIGUSR1);
-    sigaddset(&mask, SIGUSR2);
     if (sigprocmask(SIG_BLOCK, &mask, (sigset_t *)0) < 0)
         suicide("sigprocmask failed");
     signalFd = signalfd(-1, &mask, SFD_NONBLOCK);
@@ -359,11 +360,9 @@ int main(int argc, char **argv)
     struct option long_options[] = {
         {"device",  1, (int *)0, 'd'},
         {"port", 1, (int *)0, 'i'},
-        {"background", 1, (int *)0, 'b'},
         {"sample-rate", 1, (int *)0, 'r'},
         {"skip-bytes", 1, (int *)0, 's'},
         {"refill-time", 1, (int *)0, 't'},
-        {"pid-file", 1, (int *)0, 'p'},
         {"user", 1, (int *)0, 'u'},
         {"chroot", 1, (int *)0, 'c'},
         {"verbose", 0, (int *)0, 'v'},
@@ -372,10 +371,10 @@ int main(int argc, char **argv)
     };
 
     /* Process commandline options */
-    while (1) {
+    for (;;) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:r:s:t:u:c:Svh",
+        c = getopt_long(argc, argv, "d:i:r:s:t:u:c:vh",
                         long_options, (int *)0);
         if (c == -1)
             break;
@@ -389,14 +388,14 @@ int main(int argc, char **argv)
                 sound_set_port(optarg);
                 break;
 
-            case 's':
-                t = atoi(optarg);
-                sound_set_skip_bytes(t);
-                break;
-
             case 'r':
                 t = atoi(optarg);
                 sound_set_sample_rate(t);
+                break;
+
+            case 's':
+                t = atoi(optarg);
+                sound_set_skip_bytes(t);
                 break;
 
             case 't':
@@ -419,7 +418,6 @@ int main(int argc, char **argv)
                 break;
 
             case 'h':
-            case '?':
             default:
                 copyright();
                 usage();
@@ -432,7 +430,7 @@ int main(int argc, char **argv)
     /* Open kernel random device */
     random_fd = open(RANDOM_DEVICE, O_RDWR);
     if (random_fd == -1)
-        suicide("Couldn't open random device: %m");
+        suicide("Couldn't open random device: %s", strerror(errno));
 
     /* Find out the kernel entropy pool size */
     unsigned max_bits = random_max_bits(random_fd);
