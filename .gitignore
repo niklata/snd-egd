@@ -1,4 +1,6 @@
 *.o
 nk/*.o
+*.d
+nk/*.d
 snd-egd
 
