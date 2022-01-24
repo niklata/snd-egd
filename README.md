@@ -1,6 +1,6 @@
 # snd-egd
 
-Copyright 2008-2017 Nicholas J. Kain
+Copyright 2008-2022 Nicholas J. Kain
 
 License: Two-clause BSD.
 
@@ -17,19 +17,13 @@ hardware random number generator by measuring thermal noise.
 
 * Linux kernel (with ALSA)
 * GCC or Clang
-* CMake
-* [ncmlib](https://github.com/niklata/ncmlib)
+* GNU Make
 
 ## Installation
-
-Make sure that a copy or link to ncmlib is present in the top level of
-the snd-egd source directory.
 
 Edit defines.h as necessary.
 
 Compile and install snd-egd.
-* Create a build directory: `mkdir build && cd build`
-* Create the makefiles: `cmake ..`
 * Build snd-egd: `make`
 * Install the `snd-egd/snd-egd` executable in a normal place.  I would
   suggest `/usr/sbin` or `/usr/local/sbin`.
