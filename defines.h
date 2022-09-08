@@ -24,7 +24,7 @@
 #define DEFAULT_SKIP_BYTES          (48000 * 4 * 1)
 #define DEFAULT_MAX_BIT             16
 #define DEFAULT_POOLSIZE_FN         "/proc/sys/kernel/random/poolsize"
-#define DEFAULT_REFILL_SECS         -1
+#define DEFAULT_REFILL_SECS         60
 #define RB_SIZE                     PAGE_SIZE
 #define POOL_BUFFER_SIZE            PAGE_SIZE
 

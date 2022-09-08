@@ -1,4 +1,4 @@
-// Copyright 2008-2016 Nicholas J. Kain <njkain at gmail dot com>
+// Copyright 2008-2022 Nicholas J. Kain <njkain at gmail dot com>
 // SPDX-License-Identifier: MIT
 #include <unistd.h>
 #include <stdlib.h>
@@ -11,8 +11,6 @@
 #include <limits.h>
 #include <assert.h>
 #include <linux/random.h>
-#include <sys/epoll.h>
-#include <sys/signalfd.h>
 #include <sys/capability.h>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
@@ -25,11 +23,6 @@
 #include "sound.h"
 #include "rb.h"
 #include "getrandom.h"
-
-static int signalFd;
-
-static int epollfd;
-static struct epoll_event events[2];
 
 bool gflags_debug = 0;
 
@@ -44,70 +37,108 @@ struct pool_buffer_t {
 
 static char *chroot_path;
 
-static void exit_cleanup(uint32_t signum)
+static void exit_cleanup(void)
 {
     if (munlockall() == -1)
         suicide("problem unlocking pages");
     sound_close();
-    if (signum)
-        log_line("snd-egd stopping due to signal %d", signum);
     print_random_stats();
     exit(EXIT_SUCCESS);
 }
 
-static void signal_dispatch()
+enum {
+    SIGNAL_NONE = 0,
+    SIGNAL_EXIT,
+    SIGNAL_PRINT_STATS,
+    SIGNAL_DEBUG,
+};
+
+static volatile sig_atomic_t l_signal_exit;
+static volatile sig_atomic_t l_signal_print_stats;
+static volatile sig_atomic_t l_signal_debug;
+// Intended to be called in a loop until SIGNAL_NONE is returned.
+static int signals_flagged(void)
 {
-    size_t off = 0;
-    int t;
-    struct signalfd_siginfo si;
-  again:
-    t = read(signalFd, (char *)&si + off, sizeof si - off);
-    if (t < 0) {
-        if (t == EAGAIN || t == EWOULDBLOCK || t == EINTR)
-            goto again;
-        else
-            suicide("signalfd read error");
+    if (l_signal_exit) {
+        l_signal_exit = 0;
+        return SIGNAL_EXIT;
     }
-    assert(t >= 0);
-    if ((size_t)t < sizeof si - off)
-        off += (size_t)t;
-    switch (si.ssi_signo) {
-        case SIGHUP:
-        case SIGINT:
-        case SIGTERM:
-            exit_cleanup(si.ssi_signo);
+    if (l_signal_print_stats) {
+        l_signal_print_stats = 0;
+        return SIGNAL_PRINT_STATS;
+    }
+    if (l_signal_debug) {
+        l_signal_debug = 0;
+        return SIGNAL_DEBUG;
+    }
+    return SIGNAL_NONE;
+}
+
+static void signal_handler(int signo)
+{
+    int serrno = errno;
+    switch (signo) {
+    case SIGINT:
+    case SIGTERM: l_signal_exit = 1; break;
+    case SIGUSR1: l_signal_print_stats = 1; break;
+    case SIGUSR2: l_signal_debug = 1; break;
+    default: break;
+    }
+    errno = serrno;
+}
+
+static void setup_signals(void)
+{
+    static const int ss[] = {
+        SIGINT, SIGTERM, SIGUSR1, SIGUSR2, SIGKILL
+    };
+    sigset_t mask;
+
+    if (sigprocmask(0, 0, &mask) < 0)
+        suicide("sigprocmask failed");
+    for (int i = 0; ss[i] != SIGKILL; ++i)
+        if (sigdelset(&mask, ss[i]))
+            suicide("sigdelset failed");
+    if (sigaddset(&mask, SIGPIPE))
+        suicide("sigaddset failed");
+    if (sigprocmask(SIG_SETMASK, &mask, (sigset_t *)0) < 0)
+        suicide("sigprocmask failed");
+
+    struct sigaction sa = {
+        .sa_handler = signal_handler,
+        .sa_flags = SA_RESTART,
+    };
+    if (sigemptyset(&sa.sa_mask))
+        suicide("sigemptyset failed");
+    for (int i = 0; ss[i] != SIGKILL; ++i)
+        if (sigaction(ss[i], &sa, NULL))
+            suicide("sigaction failed");
+}
+
+static void signal_dispatch(void)
+{
+    for (;;) {
+        int s = signals_flagged();
+        if (s == SIGNAL_NONE) break;
+        if (s == SIGNAL_EXIT) {
+            exit_cleanup();
             break;
-        case SIGUSR1:
-            t = gflags_debug;
-            gflags_debug = 1;
+        }
+        if (s == SIGNAL_PRINT_STATS) {
+            bool t = gflags_debug;
+            gflags_debug = true;
             print_random_stats();
             gflags_debug = t;
             break;
-        case SIGUSR2:
+        }
+        if (s == SIGNAL_DEBUG) {
             gflags_debug = !gflags_debug;
-        default:
             break;
+        }
     }
 }
 
-static void epoll_init(int random_fd)
-{
-    static struct epoll_event ev;
-    epollfd = epoll_create1(0);
-    if (epollfd == -1)
-        suicide("epoll_create1 failed");
-
-    ev.events = EPOLLOUT;
-    ev.data.fd = random_fd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, random_fd, &ev) == -1)
-        suicide("epoll_ctl failed");
-    ev.events = EPOLLIN;
-    ev.data.fd = signalFd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, signalFd, &ev) == -1)
-        suicide("epoll_ctl failed");
-}
-
-static unsigned random_max_bits()
+static unsigned random_max_bits(void)
 {
     int ret, fd;
     char buf[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -126,14 +157,6 @@ static unsigned random_max_bits()
     }
     close(fd);
     return (unsigned)ret;
-}
-
-static unsigned random_cur_bits(int random_fd)
-{
-    int ret;
-    if (ioctl(random_fd, RNDGETENTCNT, &ret) == -1)
-        suicide("Couldn't query entropy-level from kernel");
-    return (unsigned)MAX(ret, 0);
 }
 
 /*
@@ -191,82 +214,26 @@ static void fill_entropy_amount(int random_fd, unsigned max_bits, unsigned wante
         get_random_data(rb.size - rb.bytes);
 }
 
-static void fill_entropy(int random_fd, unsigned max_bits)
-{
-    if (gflags_debug) log_line("woke up due to low entropy state");
-
-    /* Find out how many bits to add */
-    unsigned before = random_cur_bits(random_fd);
-    if (max_bits <= before) return;
-
-    unsigned wanted_bits = max_bits - before;
-    if (gflags_debug) log_line("max_bits: %u, wanted_bits: %u", max_bits, wanted_bits);
-
-    fill_entropy_amount(random_fd, max_bits, wanted_bits);
-}
-
-static void refill_timeout_set(int timeout)
-{
-    refill_timeout = timeout * 1000;
-    if (refill_timeout < 0)
-        refill_timeout = -1;
-}
-
-static bool refill_if_timeout(int random_fd, unsigned max_bits, int timeout)
-{
-    static struct timespec refill_ts;
-    struct timespec curts;
-    bool ts_filled = false;
-
-    if (timeout < 0)
-        goto out;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &curts))
-        suicide("clock_gettime failed");
-    time_t secdiff = (curts.tv_sec - refill_ts.tv_sec) * 1000;
-    long nsecdiff = (long)secdiff * 1000000L +
-                    curts.tv_nsec - refill_ts.tv_nsec;
-    if (secdiff >= timeout || nsecdiff >= (long)timeout * 1000000000L) {
-        ts_filled = true;
-        if (gflags_debug) log_line("timeout: filling with entropy");
-        fill_entropy_amount(random_fd, max_bits, max_bits);
-    }
-    refill_ts.tv_sec = curts.tv_sec;
-    refill_ts.tv_nsec = curts.tv_nsec;
-out:
-    return ts_filled;
-}
-
 static void main_loop(int random_fd, unsigned max_bits)
 {
-    /* Fill up the buffer and refresh any timeout. */
-    refill_if_timeout(random_fd, max_bits, 0);
-
+    struct timespec ts, rem;
+    int r;
+    goto start;
     for (;;) {
-        int ret = epoll_wait(epollfd, events, 2, refill_timeout);
-        if (ret < 0) {
-            if (errno == EINTR)
+        signal_dispatch();
+        r = nanosleep(&ts, &rem);
+        if (r == -1) {
+            if (errno == EINTR) {
+                memcpy(&ts, &rem, sizeof ts);
                 continue;
-            else
-                suicide("epoll_wait failed");
-        }
-
-        bool ts_filled = refill_if_timeout(random_fd, max_bits,
-                                           refill_timeout);
-
-        size_t evmax = (size_t)MAX(ret, 0);
-        for (size_t i = 0; i < evmax; ++i) {
-            int fd = events[i].data.fd;
-            if (fd == signalFd) {
-                if (events[i].events & EPOLLIN)
-                    signal_dispatch();
-            } else if (fd == random_fd) {
-                if (events[i].events & EPOLLOUT) {
-                    if (!ts_filled)
-                        fill_entropy(random_fd, max_bits);
-                }
             }
+            suicide("nanosleep: unexpected error: %s", strerror(errno));
         }
+start:
+        if (gflags_debug) log_line("timeout: filling with entropy");
+        fill_entropy_amount(random_fd, max_bits, max_bits);
+        ts.tv_sec = refill_timeout;
+        ts.tv_nsec = 0;
     }
 }
 
@@ -288,7 +255,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright 2008-2020 Nicholas J. Kain\n\n"
+    printf("Copyright 2008-2022 Nicholas J. Kain\n\n"
 "Permission is hereby granted, free of charge, to any person obtaining\n"
 "a copy of this software and associated documentation files (the\n"
 "\"Software\"), to deal in the Software without restriction, including\n"
@@ -306,22 +273,6 @@ static void copyright(void)
 "OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION\n"
 "WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n"
            );
-}
-
-static void setup_signals()
-{
-    sigset_t mask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGPIPE);
-    sigaddset(&mask, SIGHUP);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGTERM);
-    sigaddset(&mask, SIGUSR1);
-    if (sigprocmask(SIG_BLOCK, &mask, (sigset_t *)0) < 0)
-        suicide("sigprocmask failed");
-    signalFd = signalfd(-1, &mask, SFD_NONBLOCK);
-    if (signalFd < 0)
-        suicide("signalfd failed");
 }
 
 int main(int argc, char **argv)
@@ -373,7 +324,8 @@ int main(int argc, char **argv)
 
             case 't':
                 t = atoi(optarg);
-                refill_timeout_set(t);
+                if (t > 0 && t < 3600*24) refill_timeout = t;
+                else log_line("refill time out of range: 1s to 1d; using default 60s");
                 break;
 
             case 'u':
@@ -406,7 +358,7 @@ int main(int argc, char **argv)
         suicide("Couldn't open random device: %s", strerror(errno));
 
     /* Find out the kernel entropy pool size */
-    unsigned max_bits = random_max_bits(random_fd);
+    unsigned max_bits = random_max_bits();
 
     setup_signals();
 
@@ -423,12 +375,12 @@ int main(int argc, char **argv)
 
     rb_init(&rb);
     vn_buf_lock();
-    epoll_init(random_fd);
 
     /* Prefill entropy buffer */
     get_random_data(rb.size - rb.bytes);
 
     main_loop(random_fd, max_bits);
 
-    exit_cleanup(0);
+    exit_cleanup();
+    return 0;
 }

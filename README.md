@@ -119,9 +119,9 @@ All memory areas containing entropy are locked into RAM so that they
 cannot be swapped to disk.  Careful attention is paid to maximize
 performance -- dynamic memory allocations are not used in any of the main
 paths, and the inner loops should easily fit into even small processor
-caches.  `epoll()` is used if available.  Support exists for use of POSIX
-capabilities to allow the daemon to run as a user with only `CAP_SYS_ADMIN`,
-and snd-egd can restrict itself to a chroot.
+caches.  Support exists for use of POSIX capabilities to allow the daemon to
+run as a user with only `CAP_SYS_ADMIN`, and snd-egd can restrict itself to a
+chroot.
 
 ## Downloads
 
@@ -132,7 +132,6 @@ and snd-egd can restrict itself to a chroot.
 
 ## Possible Improvements
 
-* Support for OSSv4.
-* CMake: detect ALSA/OSSv4, little or big endian, `epoll()`, PAGE_SIZE.
+* Support pipewire
 * Automatically adjust gain of input source to maximize dynamic range.
 
