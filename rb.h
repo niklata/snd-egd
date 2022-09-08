@@ -15,7 +15,7 @@
 #include "string.h"
 
 typedef struct {
-    char buf[RB_SIZE];
+    unsigned char buf[RB_SIZE];
     unsigned int size; /* max size of the buffer in bytes */
     unsigned int bytes; /* current size of the buffer in bytes */
     unsigned int index;
@@ -52,7 +52,7 @@ static inline int rb_is_full(ring_buffer_t *rb)
 }
 
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
-unsigned int rb_store_byte(ring_buffer_t *rb, char b);
+unsigned int rb_store_byte(ring_buffer_t *rb, unsigned char b);
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
 unsigned int rb_store_byte_xor(ring_buffer_t *rb, unsigned char b);
 /* returns 0 on success, a negative number if not enough bytes or error */

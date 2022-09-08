@@ -13,7 +13,7 @@
 #include "rb.h"
 
 /* returns 1 if store successful, otherwise 0 (error or not enough room) */
-unsigned int rb_store_byte(ring_buffer_t *rb, char b)
+unsigned int rb_store_byte(ring_buffer_t *rb, unsigned char b)
 {
     if (!rb)
         return 0;
@@ -86,7 +86,7 @@ int rb_move(ring_buffer_t *rb, char *buf, unsigned int bytes)
         /* We're filling the buffer behind the current index. */
         if (rb->index < rb->size) {
             cbytes = MIN(bytes, rb->size - rb->index);
-            memcpy(buf, rb->buf + rb->index, cbytes);
+            memmove(buf, rb->buf + rb->index, cbytes);
             bytes -= cbytes;
             rb->index += cbytes;
             rb->bytes -= cbytes;
@@ -103,7 +103,7 @@ int rb_move(ring_buffer_t *rb, char *buf, unsigned int bytes)
     } else if (rb->fill_idx > rb->index) {
         /* We're filling the buffer after the current index. */
         cbytes = MIN(bytes, rb->fill_idx - rb->index);
-        memcpy(buf, rb->buf + rb->index, cbytes);
+        memmove(buf, rb->buf + rb->index, cbytes);
         bytes -= cbytes;
         rb->index += cbytes;
         rb->bytes -= cbytes;

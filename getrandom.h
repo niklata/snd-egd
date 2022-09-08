@@ -15,11 +15,11 @@ struct frame_t {
 typedef struct {
     unsigned int total_out;
     int bits_out[16];
-    char prev_bits[16];
+    int prev_bits[16];
     unsigned char byte_out[16];
 #ifdef USE_AMLS
     int amls_bits_out[2][16];
-    char amls_bits[2][16];
+    int amls_bits[2][16];
     unsigned char amls_byte_out[2][16];
 #endif
 } vn_renorm_state_t;
