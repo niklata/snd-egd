@@ -216,24 +216,21 @@ static void fill_entropy_amount(int random_fd, unsigned max_bits, unsigned wante
 
 static void main_loop(int random_fd, unsigned max_bits)
 {
-    struct timespec ts, rem;
-    int r;
+    struct timespec ts;
+    int r = clock_gettime(CLOCK_MONOTONIC, &ts);
+    if (r < 0) suicide("clock_gettime: unexpected error: %s", strerror(errno));
     goto start;
     for (;;) {
         signal_dispatch();
-        r = nanosleep(&ts, &rem);
-        if (r == -1) {
-            if (errno == EINTR) {
-                memcpy(&ts, &rem, sizeof ts);
-                continue;
-            }
-            suicide("nanosleep: unexpected error: %s", strerror(errno));
+        r = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
+        if (r) {
+            if (r == EINTR) continue;
+            suicide("clock_nanosleep: unexpected error: %s", strerror(r));
         }
 start:
         if (gflags_debug) log_line("timeout: filling with entropy");
         fill_entropy_amount(random_fd, max_bits, max_bits);
-        ts.tv_sec = refill_timeout;
-        ts.tv_nsec = 0;
+        ts.tv_sec += refill_timeout;
     }
 }
 
