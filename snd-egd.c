@@ -283,7 +283,7 @@ int main(int argc, char **argv)
     bool have_uid = false;
     struct option long_options[] = {
         {"device",  1, (int *)0, 'd'},
-        {"port", 1, (int *)0, 'i'},
+        {"item", 1, (int *)0, 'i'},
         {"sample-rate", 1, (int *)0, 'r'},
         {"skip-bytes", 1, (int *)0, 's'},
         {"refill-time", 1, (int *)0, 't'},

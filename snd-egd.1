@@ -1,8 +1,8 @@
 .\" Man page for snd-egd
 .\"
-.\" Copyright 2008-2010 Nicholas J. Kain
+.\" Copyright 2008-2022 Nicholas J. Kain
 .\"
-.TH snd-egd 1 "August 22, 2010"
+.TH snd-egd 1 "September 08, 2022"
 .LO 1
 .SH NAME
 snd-egd \- sound card entropy gathering daemon
@@ -67,34 +67,30 @@ is 'hw:0'.
 Specifies the subitem of the ALSA device that will be used for the input.  The
 default is 'capture'.
 .TP
+.B \-\^r , \-\-sample-rate=HZ
+Specifies the sample rate of the ALSA device that will be used for the input.  The
+default is 48000.
+.TP
 .B \-\^s , \-\-skip\-bytes=NUMBYTES
 Specifies the number of bytes of input from the sound card that will be
 ignored after the sound card device is opened.  Many sound cards create
 popping noises or similar when brought back from sleep state, so this
 option allows for those predictable samples to be skipped.  Default
-is one second of samples (48000 * 4).
+is 192000.
 .TP
-.B \-\^p , \-\-pidfile=FILE
-Specify he file in which the process id of ncron will be stored; the
-default is
-.BR /var/run/snd-egd.pid .
+.B \-\^t , \-\-refill-time=SECONDS
+Specifies the number of seconds between entropy refills.  A pool-size
+amount of entropy will be supplied at this regular interval.  Defaults
+to 60 seconds.
 .TP
 .B \-\^u , \-\-user=USERNAME
 Specifies the user name that snd-egd should change to once it has confined
 itself to a chroot.  This account should be a unique account with no access
 to files outside of the chroot.
 .TP
-.B \-\^g , \-\-group=GROUPNAME
-Specifies the group name that snd-egd should change to once it has confined
-itself to a chroot.  This group should be unique with no access to files
-outside of the chroot.
-.TP
 .B \-\^c , \-\-chroot=PATH
 Specify the location into which snd-egd should chroot itself.  The default is
 to not chroot.
-.TP
-.B \-\^n   \-\-nodetach
-Do not detach from the controlling terminal and remain in the foreground.
 .TP
 .B \-\^v   \-\-version
 Print version information and exit.
