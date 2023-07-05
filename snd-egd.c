@@ -30,9 +30,13 @@ ring_buffer_t rb;
 
 static int refill_timeout = DEFAULT_REFILL_SECS;
 
+// Essentially the same as linux/random.h's struct rand_pool_info,
+// but we can't use that directly since this struct is intended
+// to be stack allocated.
 struct pool_buffer_t {
-    struct rand_pool_info info;
-    char buf[POOL_BUFFER_SIZE];
+    int entropy_count;
+    int buf_size;
+    uint32_t buf[POOL_BUFFER_SIZE / 4];
 };
 
 static char *chroot_path;
@@ -180,8 +184,8 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
         wanted_bytes = total_cur_bytes;
 
     wanted_bytes = MIN(wanted_bytes, POOL_BUFFER_SIZE);
-    poolbuf->info.entropy_count = (int)MIN(wanted_bytes * 8, (unsigned)INT_MAX);
-    poolbuf->info.buf_size = (int)MIN(wanted_bytes, (unsigned)INT_MAX);
+    poolbuf->entropy_count = (int)MIN(wanted_bytes * 8, (unsigned)INT_MAX);
+    poolbuf->buf_size = (int)MIN(wanted_bytes, (unsigned)INT_MAX);
     if (rb_move(&rb, poolbuf->buf, wanted_bytes) == -1)
         suicide("rb_move() failed");
 
