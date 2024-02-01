@@ -75,10 +75,9 @@ by applying the above method recursively: 00/11 pairs and 01/10 pairs
 are each treated as new sequences.  This method is sometimes called the
 Advanced Multi-level Strategy (AMLS) in the literature.
 
-AMLS is used in snd-egd, but only to a single depth of iteration.
-Since every depth of iteration can only generate half as many bits as
-the previous depth and requires twice as much temporary storage, and
-AMLS performance is dependent on very long inputs to perform at its
+AMLS is used in snd-egd, but only to a single depth of iteration.  Since every
+depth of iteration can only generate half as many bits as the previous depth,
+and AMLS performance is dependent on very long inputs to perform at its
 theoretical level, deeply recursive AMLS is not useful.
 
 However, a sound card's signal isn't really random when represented as
@@ -96,12 +95,12 @@ unrandom bits transparently.
 
 ## Implementation Details
 
-The level of random bits present in the kernel random device (KRD) is
-monitored.  When a watermark is passed, snd-egd wakes up.  If snd-egd's
-internal ring buffer of samples is still populated, stored entropy
-is immediately put into the KRD and the ring buffer is then refilled.
-If the ring buffer is not full, then the ring buffer is refilled before
-entropy is stored as described before.
+snd-egd sleeps for a fixed interval.  It then wakes up and begins the process
+of adding entropy to the kernel random device (KRD).  If snd-egd's internal
+ring buffer of samples is still populated, stored entropy is immediately put
+into the KRD and the ring buffer is then refilled.  If the ring buffer is not
+full, then the ring buffer is refilled before entropy is stored as described
+before.
 
 The ring buffer used is not a traditional ring buffer.  The only
 distinction made is whether a byte in the ring buffer is filled with new
