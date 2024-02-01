@@ -1,4 +1,4 @@
-SNDEGD_SRCS = $(sort $(wildcard *.c) $(wildcard nk/*.c))
+SNDEGD_SRCS = $(sort alsa.c getrandom.c snd-egd.c nk/privs.c rb.c)
 SNDEGD_OBJS = $(SNDEGD_SRCS:.c=.o)
 SNDEGD_DEP = $(SNDEGD_SRCS:.c=.d)
 INCL = -I.
