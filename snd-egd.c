@@ -44,7 +44,7 @@ static char *chroot_path;
 static void exit_cleanup(void)
 {
     if (munlockall() == -1)
-        suicide("problem unlocking pages");
+        suicide("problem unlocking pages\n");
     sound_close();
     print_random_stats();
     exit(EXIT_SUCCESS);
@@ -99,24 +99,24 @@ static void setup_signals(void)
     sigset_t mask;
 
     if (sigprocmask(0, 0, &mask) < 0)
-        suicide("sigprocmask failed");
+        suicide("sigprocmask failed\n");
     for (int i = 0; ss[i] != SIGKILL; ++i)
         if (sigdelset(&mask, ss[i]))
-            suicide("sigdelset failed");
+            suicide("sigdelset failed\n");
     if (sigaddset(&mask, SIGPIPE))
-        suicide("sigaddset failed");
+        suicide("sigaddset failed\n");
     if (sigprocmask(SIG_SETMASK, &mask, (sigset_t *)0) < 0)
-        suicide("sigprocmask failed");
+        suicide("sigprocmask failed\n");
 
     struct sigaction sa = {
         .sa_handler = signal_handler,
         .sa_flags = SA_RESTART,
     };
     if (sigemptyset(&sa.sa_mask))
-        suicide("sigemptyset failed");
+        suicide("sigemptyset failed\n");
     for (int i = 0; ss[i] != SIGKILL; ++i)
         if (sigaction(ss[i], &sa, NULL))
-            suicide("sigaction failed");
+            suicide("sigaction failed\n");
 }
 
 static void signal_dispatch(void)
@@ -149,15 +149,15 @@ static unsigned random_max_bits(void)
 
     fd = open(DEFAULT_POOLSIZE_FN, O_RDONLY);
     if (!fd)
-        suicide("couldn't open poolsize procfs file");
+        suicide("couldn't open poolsize procfs file\n");
     if (read(fd, buf, sizeof buf - 1) == -1) {
         close(fd);
-        suicide("failed to read poolsize procfs file");
+        suicide("failed to read poolsize procfs file\n");
     }
     ret = atoi(buf);
     if (ret < 1) {
         close(fd);
-        suicide("poolsize can never be less than 1");
+        suicide("poolsize can never be less than 1\n");
     }
     close(fd);
     return (unsigned)ret;
@@ -187,12 +187,12 @@ static unsigned int add_entropy(struct pool_buffer_t *poolbuf, int handle,
     poolbuf->entropy_count = (int)MIN(wanted_bytes * 8, (unsigned)INT_MAX);
     poolbuf->buf_size = (int)MIN(wanted_bytes, (unsigned)INT_MAX);
     if (rb_move(&rb, poolbuf->buf, wanted_bytes) == -1)
-        suicide("rb_move() failed");
+        suicide("rb_move() failed\n");
 
     if (ioctl(handle, RNDADDENTROPY, poolbuf) == -1)
-        suicide("RNDADDENTROPY failed!");
+        suicide("RNDADDENTROPY failed!\n");
 
-    if (gflags_debug) log_line("%d bits requested, %d bits in RB, %d bits added, %d bits left in RB",
+    if (gflags_debug) log_line("%d bits requested, %d bits in RB, %d bits added, %d bits left in RB\n",
               wanted_bits, total_cur_bytes * 8, wanted_bytes * 8, rb_num_bytes(&rb) * 8);
 
     return wanted_bytes * 8;
@@ -222,17 +222,17 @@ static void main_loop(int random_fd, unsigned max_bits)
 {
     struct timespec ts;
     int r = clock_gettime(CLOCK_MONOTONIC, &ts);
-    if (r < 0) suicide("clock_gettime: unexpected error: %s", strerror(errno));
+    if (r < 0) suicide("clock_gettime: unexpected error: %s\n", strerror(errno));
     goto start;
     for (;;) {
         signal_dispatch();
         r = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
         if (r) {
             if (r == EINTR) continue;
-            suicide("clock_nanosleep: unexpected error: %s", strerror(r));
+            suicide("clock_nanosleep: unexpected error: %s\n", strerror(r));
         }
 start:
-        if (gflags_debug) log_line("timeout: filling with entropy");
+        if (gflags_debug) log_line("timeout: filling with entropy\n");
         fill_entropy_amount(random_fd, max_bits, max_bits);
         ts.tv_sec += refill_timeout;
     }
@@ -240,17 +240,17 @@ start:
 
 static void usage(void)
 {
-    printf("Collect entropy from a sound card and feed it into the kernel random pool.\n");
-    printf("Usage: snd-egd [options]\n\n");
+    printf("Collect entropy from a sound card and feed it into the kernel random pool.\n"
+           "Usage: snd-egd [options]\n\n");
     printf("--device          -d []  Sound device used (default %s)\n", DEFAULT_HW_DEVICE);
     printf("--item            -i []  Sound device item used (default %s)\n", DEFAULT_HW_ITEM);
     printf("--sample-rate     -r []  Audio sampling rate. (default %i)\n", DEFAULT_SAMPLE_RATE);
     printf("--refill-time     -t []  Seconds between full refills (default %i)\n", DEFAULT_REFILL_SECS);
     printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
-    printf("--user            -u []  User name or id to change to after dropping privileges.\n");
-    printf("--chroot          -c []  Directory to use as the chroot jail.\n");
-    printf("--verbose         -v     Be verbose.\n");
-    printf("--help            -h     This help.\n");
+    printf("--user            -u []  User name or id to change to after dropping privileges.\n"
+           "--chroot          -c []  Directory to use as the chroot jail.\n"
+           "--verbose         -v     Be verbose.\n"
+           "--help            -h     This help.\n");
 }
 
 static void copyright(void)
@@ -326,12 +326,12 @@ int main(int argc, char **argv)
             case 't':
                 t = atoi(optarg);
                 if (t > 0 && t < 3600*24) refill_timeout = t;
-                else log_line("refill time out of range: 1s to 1d; using default 60s");
+                else log_line("refill time out of range: 1s to 1d; using default 60s\n");
                 break;
 
             case 'u':
                 if (nk_uidgidbyname(optarg, &uid, &gid))
-                    suicide("invalid user '%s' specified", optarg);
+                    suicide("invalid user '%s' specified\n", optarg);
                 have_uid = true;
                 break;
 
@@ -351,12 +351,12 @@ int main(int argc, char **argv)
         }
     }
 
-    log_line("snd-egd starting up");
+    log_line("snd-egd starting up\n");
 
     /* Open kernel random device */
     random_fd = open(RANDOM_DEVICE, O_RDWR);
     if (random_fd == -1)
-        suicide("Couldn't open random device: %s", strerror(errno));
+        suicide("Couldn't open random device: %s\n", strerror(errno));
 
     /* Find out the kernel entropy pool size */
     unsigned max_bits = random_max_bits();
@@ -372,7 +372,7 @@ int main(int argc, char **argv)
         nk_set_uidgid(uid, gid, keepcaps, sizeof keepcaps);
 
     if (mlockall(MCL_FUTURE))
-        suicide("mlockall failed");
+        suicide("mlockall failed\n");
 
     rb_init(&rb);
     vn_buf_lock();

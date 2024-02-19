@@ -109,12 +109,12 @@ int rb_move(ring_buffer_t *rb, void *buf_, unsigned int bytes)
         rb->index += cbytes;
         rb->bytes -= cbytes;
         if (bytes > 0)
-            suicide("Ring buffer hit a state that should never happen.");
+            suicide("Ring buffer hit a state that should never happen.\n");
         return 0;
     } else {
         /* rb->index == rb->fill_idx */
         if (rb->bytes != rb->size)
-            suicide("Ring buffer hit a state that should never happen 2.");
+            suicide("Ring buffer hit a state that should never happen 2.\n");
         rb->index = 0;
         rb->fill_idx = rb->size;
         return rb_move(rb, buf, bytes);

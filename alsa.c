@@ -25,32 +25,32 @@ void sound_open(void)
     snd_pcm_hw_params_t *ct_params;
 
     if ((err = snd_pcm_open(&pcm_handle, cdevice, SND_PCM_STREAM_CAPTURE, 0)) < 0)
-        suicide("Error opening PCM device %s: %s", cdevice, snd_strerror(err));
+        suicide("Error opening PCM device %s: %s\n", cdevice, snd_strerror(err));
 
     snd_pcm_hw_params_alloca(&ct_params);
 
     err = snd_pcm_hw_params_any(pcm_handle, ct_params);
     if (err < 0)
-        suicide("Broken configuration for %s PCM: no configurations available: %s",
+        suicide("Broken configuration for %s PCM: no configurations available: %s\n",
                    cdev_id, snd_strerror(err));
 
     /* Disable rate resampling */
     err = snd_pcm_hw_params_set_rate_resample(pcm_handle, ct_params, 0);
     if (err < 0)
-        suicide("Could not disable rate resampling: %s", snd_strerror(err));
+        suicide("Could not disable rate resampling: %s\n", snd_strerror(err));
 
     /* Set access to SND_PCM_ACCESS_RW_INTERLEAVED -- NONINTERLEAVED would
      * be preferable, but it's uncommon on sound cards.*/
     err = snd_pcm_hw_params_set_access(pcm_handle, ct_params,
                                        SND_PCM_ACCESS_RW_INTERLEAVED);
     if (err < 0)
-        suicide("Could not set access to SND_PCM_ACCESS_RW_INTERLEAVED: %s",
+        suicide("Could not set access to SND_PCM_ACCESS_RW_INTERLEAVED: %s\n",
                    snd_strerror(err));
 
     /* Choose rate nearest to our target rate */
     err = snd_pcm_hw_params_set_rate_near(pcm_handle, ct_params, &sample_rate, 0);
     if (err < 0)
-        suicide("Rate %iHz not available for %s: %s",
+        suicide("Rate %iHz not available for %s: %s\n",
                    sample_rate, cdev_id, snd_strerror(err));
 
     /* Set sample format -- prefer endianness equal to that of the CPU */
@@ -69,37 +69,37 @@ void sound_open(void)
         err = snd_pcm_hw_params_set_format(pcm_handle, ct_params, snd_format);
     }
     if (err < 0)
-        suicide("Sample format (SND_PCM_FORMAT_S16_BE and _LE) not available for %s: %s",
+        suicide("Sample format (SND_PCM_FORMAT_S16_BE and _LE) not available for %s: %s\n",
                    cdev_id, snd_strerror(err));
 
     /* Set stereo for faster sampling. */
     err = snd_pcm_hw_params_set_channels(pcm_handle, ct_params, 2);
     if (err < 0)
-        suicide("Channels count (%i) not available for %s: %s",
+        suicide("Channels count (%i) not available for %s: %s\n",
                    2, cdev_id, snd_strerror(err));
 
     /* Apply settings to sound device */
     err = snd_pcm_hw_params(pcm_handle, ct_params);
     if (err < 0)
-        suicide("Could not apply settings to sound device!");
+        suicide("Could not apply settings to sound device!\n");
 
     ssize_t tbpf = snd_pcm_frames_to_bytes(pcm_handle, 1);
     if (tbpf > 0)
         pcm_bytes_per_frame = (size_t)tbpf;
     else
-        suicide("pcm_bytes_per_frame would be zero or negative!");
-    if (gflags_debug) log_line("bytes-per-frame: %zu", pcm_bytes_per_frame);
+        suicide("pcm_bytes_per_frame would be zero or negative!\n");
+    if (gflags_debug) log_line("bytes-per-frame: %zu\n", pcm_bytes_per_frame);
     pcm_can_pause = snd_pcm_hw_params_can_pause(ct_params);
 
     /* Discard the initial data; it may be a click or something else odd. */
     size_t got_bytes = 0;
     while (got_bytes < skip_bytes)
         got_bytes += sound_read(buf, sizeof buf);
-    log_line("discarded first %zu bytes of pcm input", got_bytes);
+    log_line("discarded first %zu bytes of pcm input\n", got_bytes);
 
     if (pcm_can_pause) {
         sound_stop();
-        if (gflags_debug) log_line("alsa device supports pcm pause");
+        if (gflags_debug) log_line("alsa device supports pcm pause\n");
     }
 }
 
@@ -118,7 +118,7 @@ unsigned sound_read(void *buf, size_t size)
         fr = snd_pcm_recover(pcm_handle, fr, 0);
     /* Nope, something else is wrong. Bail. */
     if (fr < 0 || (fr == -1 && errno != EINTR))
-        suicide("get_random_data(): Read error: %s", strerror(errno));
+        suicide("get_random_data(): Read error: %s\n", strerror(errno));
     return (unsigned)fr;
 }
 
