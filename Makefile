@@ -3,7 +3,7 @@ SNDEGD_OBJS = $(SNDEGD_SRCS:.c=.o)
 SNDEGD_DEP = $(SNDEGD_SRCS:.c=.d)
 INCL = -iquote .
 
-CFLAGS = -MMD -O2 -s -fno-strict-overflow -pedantic -Wall -Wextra -Wimplicit-fallthrough=0 -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -Wsign-conversion -D_GNU_SOURCE
+CFLAGS = -MMD -O2 -flto -s -DNDEBUG -fno-strict-overflow -pedantic -Wall -Wextra -Wimplicit-fallthrough=0 -Wformat=2 -Wformat-nonliteral -Wformat-security -Wshadow -Wpointer-arith -Wmissing-prototypes -Wcast-qual -Wsign-conversion -D_GNU_SOURCE
 #-fsanitize=undefined -fsanitize-undefined-trap-on-error -fsanitize=address
 CPPFLAGS += $(INCL)
 

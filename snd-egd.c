@@ -279,7 +279,7 @@ static void copyright(void)
 int main(int argc, char **argv)
 {
     int c, random_fd = -1;
-    uid_t uid;
+    uid_t uid = 0;
     gid_t gid;
     bool have_uid = false;
     struct option long_options[] = {
