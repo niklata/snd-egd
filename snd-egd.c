@@ -1,4 +1,4 @@
-// Copyright 2008-2022 Nicholas J. Kain <njkain at gmail dot com>
+// Copyright 2008-2025 Nicholas J. Kain <njkain at gmail dot com>
 // SPDX-License-Identifier: MIT
 #include <unistd.h>
 #include <stdlib.h>
@@ -249,6 +249,7 @@ static void usage(void)
     printf("--skip-bytes      -s []  Ignore first N audio bytes (default %i)\n", DEFAULT_SKIP_BYTES);
     printf("--user            -u []  User name or id to change to after dropping privileges.\n"
            "--chroot          -c []  Directory to use as the chroot jail.\n"
+           "--syslog          -S     Log to syslog rather than stderr.\n"
            "--verbose         -v     Be verbose.\n"
            "--help            -h     This help.\n");
 }
@@ -256,7 +257,7 @@ static void usage(void)
 static void copyright(void)
 {
     printf("snd-egd %s, sound entropy gathering daemon.\n", SNDEGD_VERSION);
-    printf("Copyright 2008-2022 Nicholas J. Kain\n\n"
+    printf("Copyright 2008-2025 Nicholas J. Kain\n\n"
 "Permission is hereby granted, free of charge, to any person obtaining\n"
 "a copy of this software and associated documentation files (the\n"
 "\"Software\"), to deal in the Software without restriction, including\n"
@@ -283,23 +284,24 @@ int main(int argc, char **argv)
     gid_t gid;
     bool have_uid = false;
     struct option long_options[] = {
-        {"device",  1, (int *)0, 'd'},
-        {"item", 1, (int *)0, 'i'},
-        {"sample-rate", 1, (int *)0, 'r'},
-        {"skip-bytes", 1, (int *)0, 's'},
-        {"refill-time", 1, (int *)0, 't'},
-        {"user", 1, (int *)0, 'u'},
-        {"chroot", 1, (int *)0, 'c'},
-        {"verbose", 0, (int *)0, 'v'},
-        {"help", 0, (int *)0, 'h'},
-        {(const char *)0, 0, (int *)0, 0 }
+        {"device",  1, NULL, 'd'},
+        {"item", 1, NULL, 'i'},
+        {"sample-rate", 1, NULL, 'r'},
+        {"skip-bytes", 1, NULL, 's'},
+        {"refill-time", 1, NULL, 't'},
+        {"user", 1, NULL, 'u'},
+        {"chroot", 1, NULL, 'c'},
+        {"syslog", 0, NULL, 'S'},
+        {"verbose", 0, NULL, 'v'},
+        {"help", 0, NULL, 'h'},
+        {NULL, 0, NULL, 0 }
     };
 
     /* Process commandline options */
     for (;;) {
         int t;
 
-        c = getopt_long(argc, argv, "d:i:r:s:t:u:c:vh",
+        c = getopt_long(argc, argv, "d:i:r:s:t:u:c:Svh",
                         long_options, (int *)0);
         if (c == -1)
             break;
@@ -337,6 +339,11 @@ int main(int argc, char **argv)
 
             case 'c':
                 chroot_path = strdup(optarg);
+                break;
+
+            case 'S':
+                nk_set_is_daemon();
+                openlog("snd-egd", LOG_CONS, LOG_DAEMON);
                 break;
 
             case 'v':
