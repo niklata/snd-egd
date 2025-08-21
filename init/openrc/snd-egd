@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# Copyright 2025 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+
+name="snd-egd daemon"
+description="snd-egd audio entropy gathering daemon"
+command=/usr/local/sbin/snd-egd
+command_background=true
+pidfile="/run/snd-egd.pid"
+command_args="-S -d hw:1 -t 60 -u snd-egd -c /var/empty"
+
+depend() {
+	use logger
+}
